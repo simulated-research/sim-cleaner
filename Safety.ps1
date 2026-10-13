@@ -77,6 +77,6 @@ function ConvertTo-SimSafeData($Value) {
     if($Value -is [string]){return (Protect-SimText $Value)}
     if($Value -is [Collections.IDictionary]){$copy=[ordered]@{};foreach($key in $Value.Keys){$copy[$key]=if($key -match '^(password|passwd|pwd|api[_-]?key|secret|client[_-]?secret|access[_-]?token|refresh[_-]?token|authorization|session[_-]?key|private[_-]?key|connection[_-]?string)$'){'[redacted]'}else{ConvertTo-SimSafeData $Value[$key]}};return $copy}
     if($Value -is [array]){$copy=@(foreach($v in $Value){ConvertTo-SimSafeData $v});return ,$copy}
-    if($Value -is [pscustomobject]){$copy=[ordered]@{};foreach($prop in $Value.PSObject.Properties){$copy[$prop.Name]=ConvertTo-SimSafeData $prop.Value};return $copy}
+    if($Value -is [pscustomobject]){$copy=[ordered]@{};foreach($prop in $Value.PSObject.Properties){$copy[$prop.Name]=if($prop.Name -match '^(password|passwd|pwd|api[_-]?key|secret|client[_-]?secret|access[_-]?token|refresh[_-]?token|authorization|session[_-]?key|private[_-]?key|connection[_-]?string)$'){'[redacted]'}else{ConvertTo-SimSafeData $prop.Value}};return $copy}
     return $Value
 }

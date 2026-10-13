@@ -15,7 +15,7 @@ Children use argument arrays, four-MiB raw-byte and two-Mi-character caps on eac
 | Observed Autorunsc64 14.3 | Strict UTF-16LE with required BOM. |
 | Observed Sigcheck64 2.92 | Strict UTF-16LE without BOM; an unexpected BOM is rejected. |
 
-There is no ambient code page or replacement fallback. Stream failures retain their cause. Successful decoding alone cannot identify every wrong-but-valid encoding. New vendor versions and local output environments require focused integration acceptance. The per-tool report contract is authoritative; an older generic report-summary sentence still describes the pre-follow-up BOM-only state.
+There is no ambient code page or replacement fallback. Stream failures retain their cause. Successful decoding alone cannot identify every wrong-but-valid encoding. New vendor versions and local output environments require focused integration acceptance. The per-tool report contract is authoritative; this branch also retains the Claude demo's correction of the older generic report-summary sentence.
 
 Startup CSV output drops Profile and Launch String; missing Signer is explicitly uncollected. Reports still contain private paths, identifiers and network metadata. Redaction reduces known secret patterns; it is not a guarantee that reports contain no secrets. Keep runtime output outside the repository and review each report before sharing. No raw private inventory is included in this package. Synthetic secret strings in the inert harness are test data.
 

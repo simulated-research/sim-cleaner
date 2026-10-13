@@ -4,6 +4,8 @@ Sim Cleaner is a source-reviewed Windows inspection and Microsoft Defender orche
 
 This snapshot retains the tested 0.2.0 runtime plus four collector compatibility fixes. The exact source and harness fingerprints are in [provenance/source.json](provenance/source.json). The newer snapshot supersedes the earlier reviewed Library version 4; both archive fingerprints are retained there.
 
+The `astra-source-reconciliation-20261013` branch builds on the Claude/Astra demo through `0ba73c7`, with a structured-object secret-minimization fix and source-bound packaging acceptance. Its exact Windows inert harness passed **143/143** on PowerShell 7.6.5. [Source reconciliation](docs/SOURCE-RECONCILIATION.md) separates these results from the historical main 140-case evidence and unavailable CI results. The existing main and demo branches are preserved.
+
 ## Start with source and inert tests
 
 Read [the review](docs/REVIEW-FOLLOWUP.md), [validation scope](docs/VALIDATION.md), [action semantics](SIM-CLEANER.txt) and [tool/privacy limits](docs/TOOLING.md) before running an entry point.

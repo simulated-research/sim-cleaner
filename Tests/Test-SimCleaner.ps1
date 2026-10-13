@@ -192,6 +192,11 @@ Case 'Wider redaction covers common token and key shapes' {
  $safe=Protect-SimText ("token1 eyJabcdef.ghijkl.mnopqr`ntoken2 AKIAABCDEFGHIJKLMNOP`ntoken3 xoxb-1234567890-ZZZZ`nclient_secret=SYNTHSECRET`npwd=SYNTHPWD`n"+$pem)
  Assert ($safe -notmatch 'SYNTH|eyJabcdef|AKIAABCDEFGHIJKLMNOP|xoxb-1234567890')
 }
+Case 'Known sensitive fields minimized across structured objects and dictionaries' {
+ $safe=ConvertTo-SimSafeData ([pscustomobject]@{client_secret='SYNTHETIC_SECRET';Nested=@([pscustomobject]@{Password='SYNTHETIC_PASSWORD'},[ordered]@{RefreshToken='SYNTHETIC_REFRESH'});Description='fixture metadata'})
+ Assert ($safe.client_secret -ceq '[redacted]' -and $safe.Nested[0].Password -ceq '[redacted]' -and $safe.Nested[1].RefreshToken -ceq '[redacted]')
+ Assert ($safe.Description -ceq 'fixture metadata' -and ($safe|ConvertTo-Json -Depth 8) -notmatch 'SYNTHETIC')
+}
 Case 'Suspicion score ranks unsigned temp file above signed program file' {
  $hot=Get-InspectionSuspicionScore ([pscustomobject]@{'Image Path'='C:\Users\u\AppData\Local\Temp\x.exe';Signer='Not collected';Company='';Enabled='enabled'})
  $cold=Get-InspectionSuspicionScore ([pscustomobject]@{'Image Path'='C:\Program Files\Vendor\app.exe';Signer='Vendor Inc';Company='Vendor Inc';Enabled='enabled'})

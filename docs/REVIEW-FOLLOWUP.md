@@ -11,7 +11,7 @@ Reviewed 2026-10-13 UTC against the independently hashed 140-test upstream archi
 
 The current source was reread for selected-member extraction, path/drive/reparse checks, official HTTPS/no redirects, explicit use/download/EULA gates, exact Microsoft certificate identity, recorded hash and held-handle recheck, bounded child arguments/output/time, CSV projection and failure propagation. No new blocking defect was found in the four follow-up changes. No new cleanup capability was added.
 
-One low-severity reporting limitation remains at Inspect-Windows.ps1's `ExternalToolOutputEncoding` summary field: its generic BOM-only/pending-integration text is stale. The per-tool `OutputEncodingContract` records the correct separate contracts. This repository retains the executed source fingerprint; use the per-tool contract and current validation documentation, not that old summary sentence, to assess compatibility.
+The historical main snapshot retained a stale generic BOM-only/pending-integration summary sentence. The Claude demo corrected that field, and the correction is retained here. The per-tool `OutputEncodingContract` still records the separate contracts. Current source reconciliation and the additional typed-object privacy fix are recorded in [SOURCE-RECONCILIATION.md](SOURCE-RECONCILIATION.md); the original review above remains the tested-140 historical disposition.
 
 ## Evidence and traceability
 

@@ -1,6 +1,6 @@
 {
   "Schema": 1,
-  "SourceVersion": "0.2.0 with four collector compatibility follow-up fixes, plus the claude-and-astra-working-demo changes (Sigcheck suspicion ordering, wider redaction, stale summary fix)",
+  "SourceVersion": "0.2.0 with four collector compatibility follow-up fixes, plus the claude-and-astra-working-demo changes (Sigcheck suspicion ordering, wider redaction, stale summary fix); independent source reconciliation adds typed-object secret minimization and source-bound Windows packaging acceptance",
   "DemoBranch": "claude-and-astra-working-demo: a working demo built on tested-140, kept separate from main. See docs/CLAUDE-ASTRA-DEMO.md and patches/tested-140-to-claude-astra-demo.patch. No cleanup capability added; honest scope unchanged.",
   "UpstreamSnapshot": {
     "File": "Sim Cleaner tested prototype.zip",
@@ -19,9 +19,9 @@
   "ReviewedSourceSHA256": {
     "Inspect-Windows.ps1": "659E2F25E24897E8B5E951D24B10F8C8D6A8B497828A4E76556BEA76A07A0FF8",
     "Launch-SimCleaner.ps1": "D0486C577B390D4AFBABDD65304F700AE8C6E15950F21DBC297E717E84E32893",
-    "Safety.ps1": "F458C6AD234EE376E7AA94C740E35C09C8816E337EEAB75E1CB8C69FB1B2AA86",
+    "Safety.ps1": "C830B83FCAE7CFD5765B0860F763C8BC7614E68402EFB24E02BD566787BC9371",
     "SimCleaner.ps1": "2E519810E02F76FED93C96D27108AA29F28E2FFCC891433011B272F133987001",
-    "Tests/Test-SimCleaner.ps1": "B0AB4383539A375CE481F3CAFE027D886E47B2642D3486A560DB9CE7B3BF7A8F",
+    "Tests/Test-SimCleaner.ps1": "3ECE1619C1F99BC00FE8AB5E9A1F73180EBC04D106BE7CD0CBA3FD868220065B",
     "Tests/historical-scan-fixture.json": "5CB83B0CD5B98EA5748B8B1D0041B4B0318615CE4986373E17245829C1F9E37C"
   },
   "ByteIdenticalToPriorReviewedSnapshot": [
@@ -44,5 +44,18 @@
     "OfflineScan remains blocked",
     "No unattended-use acceptance",
     "No repository URL was inferred"
-  ]
+  ],
+  "Reconciliation": {
+    "ParentCommit": "0ba73c7b75e8aa1ae0ae102df9a252bf17cf4a8a",
+    "UpstreamBranch": "claude-and-astra-working-demo",
+    "SourceBranch": "astra-source-reconciliation-20261013",
+    "MainBaselinePreserved": "2d5ade2acf35fff8a8e0f9720ceab29ff85f3401",
+    "NoCleanupScopeExpansion": true
+  },
+  "ValidationEvidence": {
+    "File": "evidence/windows-reconciliation-tests.json",
+    "ExpectedCases": 143,
+    "Runtime": "7.6.5",
+    "Scope": "Reviewed inert harness only; no live security operations. CI separately unverified."
+  }
 }

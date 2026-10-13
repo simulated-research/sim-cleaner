@@ -1,5 +1,7 @@
 # Claude and Astra working demo
 
+This file preserves the demo's original record through `0ba73c7`. The independent `astra-source-reconciliation-20261013` branch now has its own **143/143 Windows inert** evidence, with one structured-object privacy fix; see [SOURCE-RECONCILIATION.md](SOURCE-RECONCILIATION.md). The original Linux-only observations below remain historical, and unavailable CI results are not promoted to verified Windows acceptance.
+
 This branch is a working demo built on top of the tested-140 snapshot. It is deliberately kept separate from the main line so it is obvious what it is. It adds three source improvements that came out of the earlier adversarial review, with matching inert tests, and it records a real harness run. It does not add any cleanup or mutation capability, and it does not change the honest scope of the tool: inspection metadata and passing inert tests still do not establish that a machine is clean.
 
 ## The take, short version

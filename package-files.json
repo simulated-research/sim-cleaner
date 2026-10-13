@@ -31,5 +31,7 @@
   "patches/reviewed-118-to-tested-140.patch",
   "patches/tested-140-to-claude-astra-demo.patch",
   "provenance/source.json",
-  "scripts/build_package.py"
+  "scripts/build_package.py",
+  "docs/SOURCE-RECONCILIATION.md",
+  "evidence/windows-reconciliation-tests.json"
 ]

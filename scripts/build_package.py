@@ -53,8 +53,12 @@ def read_inputs():
     for name, expected in provenance["ReviewedSourceSHA256"].items():
         if name not in payloads or sha(payloads[name]) != expected:
             raise ValueError("Reviewed source/harness bytes changed: " + name)
-    test = json.loads(payloads["evidence/repository-test-results.json"])
-    if test["Failed"] != 0 or test["Passed"] != 140:
+    validation = provenance["ValidationEvidence"]
+    expected_cases = validation["ExpectedCases"]
+    if type(expected_cases) is not int or expected_cases <= 0:
+        raise ValueError("Invalid expected harness case count")
+    test = json.loads(payloads[validation["File"]])
+    if test["Failed"] != 0 or test["Passed"] != expected_cases or test["Runtime"] != validation["Runtime"]:
         raise ValueError("Missing successful exact reviewed-harness result")
     expected = provenance["ReviewedSourceSHA256"]
     if test["HarnessSHA256"] != expected["Tests/Test-SimCleaner.ps1"] or test["HistoricalFixtureSHA256"] != expected["Tests/historical-scan-fixture.json"]:

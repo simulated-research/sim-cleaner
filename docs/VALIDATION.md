@@ -2,6 +2,8 @@
 
 This is a local-use prototype with reviewed source and inert tests. It is not certified, not accepted for unattended elevated operation and has no malware-detection or removal-efficacy claim. No disposable isolated Windows environment was available for real mutation acceptance.
 
+Current source-reconciliation acceptance is **143/143 local Windows inert cases**, zero failures, PowerShell 7.6.5. Use [windows-reconciliation-tests.json](../evidence/windows-reconciliation-tests.json), the current `ValidationEvidence` declaration in provenance and [SOURCE-RECONCILIATION.md](SOURCE-RECONCILIATION.md) for the source now on this branch. The table below preserves the earlier tested-140/main and integration records; those do not substitute for current source acceptance. CI status remains separately unverified.
+
 ## Recorded evidence
 
 | Evidence | Result and scope |
