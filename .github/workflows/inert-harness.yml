@@ -1,0 +1,35 @@
+name: inert harness (Windows)
+
+# Runs the source-reviewed inert test harness on a Windows PowerShell 7 runner.
+# The harness mocks Defender, CIM, events and tool dispatch and performs only
+# local atomic writes and output-only/timeout child fixtures. It never starts a
+# real Defender scan, remediation, signature update, download, reboot or sample
+# upload. It is safe to run in CI. It exits 1 if any case fails.
+
+on:
+  push:
+    branches: [ claude-and-astra-working-demo ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inert-tests:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4  # consider pinning to a commit SHA for this security repo
+      - name: Run inert harness on PowerShell 7
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP ("InertResults-" + [guid]::NewGuid().ToString('N'))
+          ./Tests/Test-SimCleaner.ps1 -OutputDirectory $out
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4  # consider pinning to a commit SHA
+        with:
+          name: inert-test-results
+          path: ${{ runner.temp }}/InertResults-*/test-results.json
+          if-no-files-found: ignore
