@@ -187,6 +187,16 @@ Case 'Bearer, quoted password, URL credentials minimized' {
  $safe=Protect-SimText "authorization: Bearer SYNTHETIC_BEARER`npassword='SYNTHETIC MULTI WORD'`nhttps://syntheticuser:syntheticpass@example.invalid/p?q=SYNTHETIC_QUERY#secret"
  Assert ($safe -notmatch 'SYNTHETIC|syntheticuser|syntheticpass|secret')
 }
+Case 'Wider redaction covers common token and key shapes' {
+ $pem="-----BEGIN RSA PRIVATE KEY-----`nSYNTHKEYLINE`n-----END RSA PRIVATE KEY-----"
+ $safe=Protect-SimText ("token1 eyJabcdef.ghijkl.mnopqr`ntoken2 AKIAABCDEFGHIJKLMNOP`ntoken3 xoxb-1234567890-ZZZZ`nclient_secret=SYNTHSECRET`npwd=SYNTHPWD`n"+$pem)
+ Assert ($safe -notmatch 'SYNTH|eyJabcdef|AKIAABCDEFGHIJKLMNOP|xoxb-1234567890')
+}
+Case 'Suspicion score ranks unsigned temp file above signed program file' {
+ $hot=Get-InspectionSuspicionScore ([pscustomobject]@{'Image Path'='C:\Users\u\AppData\Local\Temp\x.exe';Signer='Not collected';Company='';Enabled='enabled'})
+ $cold=Get-InspectionSuspicionScore ([pscustomobject]@{'Image Path'='C:\Program Files\Vendor\app.exe';Signer='Vendor Inc';Company='Vendor Inc';Enabled='enabled'})
+ Assert ($hot -gt $cold)
+}
 Case 'Safe report recursively minimizes synthetic secrets' {Reset;$path=Join-Path $OutputDirectory 'privacy.json';Save-SimReport ([ordered]@{Authorization='SYNTHETIC';Nested=@('authorization: Bearer SYNTHETIC')}) $path;Assert ((Get-Content $path -Raw) -notmatch 'SYNTHETIC')}
 Case 'Atomic report refuses overwrite and preserves bytes' {Reset;$path=Join-Path $OutputDirectory 'durable.json';Save-SimReport @{Value=1} $path;$old=(Get-FileHash $path).Hash;MustThrow {Save-SimReport @{Value=2} $path} 'refusing overwrite';Assert ((Get-FileHash $path).Hash -eq $old)}
 Case 'Unique run directories even close invocation times' {Reset;$a=Invoke-SimAction Status $false;Reset;$b=Invoke-SimAction Status $false;Assert ($a.RunId -ne $b.RunId)}

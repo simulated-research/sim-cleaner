@@ -14,10 +14,12 @@
   "Tests/README.txt",
   "Tests/Test-SimCleaner.ps1",
   "Tests/historical-scan-fixture.json",
+  "docs/CLAUDE-ASTRA-DEMO.md",
   "docs/REVIEW-FOLLOWUP.md",
   "docs/TOOLING.md",
   "docs/VALIDATION.md",
   "docs/historical-review-118.txt",
+  "evidence/claude-astra-demo-harness.json",
   "evidence/independent-acceptance-112.json",
   "evidence/independent-acceptance-118.json",
   "evidence/local-live-integration.json",
@@ -27,6 +29,7 @@
   "package-files.json",
   "patches/original-to-reviewed-118.patch",
   "patches/reviewed-118-to-tested-140.patch",
+  "patches/tested-140-to-claude-astra-demo.patch",
   "provenance/source.json",
   "scripts/build_package.py"
 ]

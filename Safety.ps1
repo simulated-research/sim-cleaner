@@ -59,7 +59,14 @@ function Get-SimHash($Value) {
 }
 function Protect-SimText([string]$Text) {
     # Conservative minimization, not a guarantee of secret-free diagnostics.
-    $safe=$Text -replace '(?im)\b(password|api[_-]?key|access[_-]?token|authorization)\s*[:=][^\r\n]*','$1=[redacted]'
+    # Labelled key=value / key: value secrets, widened to the common key names.
+    $safe=$Text -replace '(?im)\b(password|passwd|pwd|api[_-]?key|secret|client[_-]?secret|access[_-]?token|refresh[_-]?token|authorization|session[_-]?key|private[_-]?key|connection[_-]?string)\s*[:=][^\r\n]*','$1=[redacted]'
+    # High-confidence secret shapes, redacted regardless of the surrounding label.
+    $safe=$safe -replace '(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{10,}','Bearer [redacted]'
+    $safe=$safe -replace '\beyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\b','[redacted JWT]'
+    $safe=$safe -replace '\b(?:AKIA|ASIA)[A-Z0-9]{16}\b','[redacted AWS key]'
+    $safe=$safe -replace '\bxox[baprs]-[A-Za-z0-9-]{10,}\b','[redacted token]'
+    $safe=$safe -replace '(?s)-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----.*?-----END (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----','[redacted private key]'
     [regex]::Replace($safe,'(?i)\b(?:https?|ftp)://[^\s"<>]+',{
         param($match)
         try {$u=[UriBuilder]::new($match.Value);$u.UserName='';$u.Password='';$u.Query='';$u.Fragment='';$u.Uri.AbsoluteUri}catch{'[redacted URL]'}
@@ -68,7 +75,7 @@ function Protect-SimText([string]$Text) {
 function ConvertTo-SimSafeData($Value) {
     if($null -eq $Value){return $null}
     if($Value -is [string]){return (Protect-SimText $Value)}
-    if($Value -is [Collections.IDictionary]){$copy=[ordered]@{};foreach($key in $Value.Keys){$copy[$key]=if($key -match '^(password|api[_-]?key|access[_-]?token|authorization)$'){'[redacted]'}else{ConvertTo-SimSafeData $Value[$key]}};return $copy}
+    if($Value -is [Collections.IDictionary]){$copy=[ordered]@{};foreach($key in $Value.Keys){$copy[$key]=if($key -match '^(password|passwd|pwd|api[_-]?key|secret|client[_-]?secret|access[_-]?token|refresh[_-]?token|authorization|session[_-]?key|private[_-]?key|connection[_-]?string)$'){'[redacted]'}else{ConvertTo-SimSafeData $Value[$key]}};return $copy}
     if($Value -is [array]){$copy=@(foreach($v in $Value){ConvertTo-SimSafeData $v});return ,$copy}
     if($Value -is [pscustomobject]){$copy=[ordered]@{};foreach($prop in $Value.PSObject.Properties){$copy[$prop.Name]=ConvertTo-SimSafeData $prop.Value};return $copy}
     return $Value

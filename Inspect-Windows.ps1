@@ -47,7 +47,7 @@ $inspectionReport = [ordered]@{
     ToolEulaAcceptanceRequested = $AcceptToolEula.IsPresent
     FirewallPolicyStore = 'ActiveStore'
     NativeOutputEncoding = 'Strict ASCII; localized/non-ASCII native output is unavailable rather than guessed'
-    ExternalToolOutputEncoding = 'Strict UTF-16LE with BOM required; integration acceptance pending'
+    ExternalToolOutputEncoding = 'Per-tool contract: Autorunsc UTF-16LE with BOM, Sigcheck UTF-16LE without BOM. See each tool record OutputEncodingContract.'
     Limitations = @()
 }
 
@@ -110,6 +110,22 @@ function Convert-InspectionStartupCsv([string]$Csv) {
     foreach($row in $rows){
         [pscustomobject]@{Entry=$row.Entry;'Entry Location'=$row.'Entry Location';Enabled=$row.Enabled;Category=$row.Category;Description=$row.Description;Signer=if($row.PSObject.Properties.Name -ccontains 'Signer'){$row.Signer}else{'Not collected'};Company=$row.Company;'Image Path'=$row.'Image Path';Version=$row.Version;SignatureCoverage=if($row.PSObject.Properties.Name -ccontains 'Signer'){'Reported by source, not independently established'}else{'Not requested in metadata-only mode'}}
     }
+}
+function Get-InspectionSuspicionScore($Entry) {
+    # Review-priority heuristic only; a higher score means "look at this first",
+    # never a malware verdict. Used to order the bounded Sigcheck followups so the
+    # 30-item cap keeps the most review-worthy unverified startup files.
+    $score=0
+    $path=[string]$Entry.'Image Path'
+    $signer=[string]$Entry.Signer
+    $company=[string]$Entry.Company
+    if($signer -eq '' -or $signer -eq 'Not collected' -or $signer -match '(?i)^\(?not verified'){$score+=3}
+    if([string]::IsNullOrWhiteSpace($company)){$score+=2}
+    if($path -match '(?i)[\\/](AppData|Local[\\/]Temp|Temp|Tmp|Downloads|Public|ProgramData|Users[\\/]Public)[\\/]'){$score+=3}
+    if($path -match '(?i)^[A-Za-z]:[\\/][^\\/]+\.(exe|dll|scr|bat|cmd|ps1|vbs|js)$'){$score+=2}
+    if($path -notmatch '(?i)[\\/](Windows|Program Files|Program Files \(x86\))[\\/]'){$score+=1}
+    if([string]$Entry.Enabled -match '(?i)enabled|yes|true'){$score+=1}
+    return $score
 }
 function Get-VerifiedMicrosoftTool {
     param([string]$Name,[string]$ArchiveUrl,[string]$BinaryName)
@@ -351,8 +367,15 @@ $inspectionReport.StartupEntries = Get-InspectionSection 'Autoruns startup audit
 }
 $inspectionReport.SignatureFollowups = Get-InspectionSection 'Sigcheck review of accessible unverified startup files' {
     if (-not $sigcheckTool) { throw 'Verified Sigcheck was unavailable.' }
-    $candidates = @($inspectionReport.StartupEntries.Data | Where-Object {$_.Signer -notmatch '^\(Verified\)' -and $_.'Image Path' -and $_.'Image Path' -notmatch '^File not found:'} | Select-Object -ExpandProperty 'Image Path' -Unique)
-    $inspectionReport.SignatureCandidateCoverage=[ordered]@{Total=$candidates.Count;Limit=30;OmittedByCap=[math]::Max(0,$candidates.Count-30)}
+    $candidateEntries = @($inspectionReport.StartupEntries.Data | Where-Object {$_.Signer -notmatch '^\(Verified\)' -and $_.'Image Path' -and $_.'Image Path' -notmatch '^File not found:'})
+    # Rank unique image paths by review priority before the cap, so a run with more
+    # than 30 unverified startup files checks the most suspicious ones rather than
+    # whatever Autoruns happened to list first.
+    $ranked = @($candidateEntries | Group-Object 'Image Path' | ForEach-Object {
+        [pscustomobject]@{Path=$_.Name;Score=(@($_.Group | ForEach-Object {Get-InspectionSuspicionScore $_}) | Measure-Object -Maximum).Maximum}
+    } | Sort-Object @{Expression='Score';Descending=$true},@{Expression='Path';Descending=$false})
+    $candidates = @($ranked | Select-Object -ExpandProperty Path)
+    $inspectionReport.SignatureCandidateCoverage=[ordered]@{Total=$candidates.Count;Limit=30;OmittedByCap=[math]::Max(0,$candidates.Count-30);Ordering='Most-suspicious-first review heuristic (unsigned, no publisher, user-writable/temp or drive-root paths); any omitted files are the lowest-ranked, not arbitrary'}
     foreach ($candidate in ($candidates | Select-Object -First 30)) {
         try {
             [void](Assert-SimLocalPath $candidate -Leaf)

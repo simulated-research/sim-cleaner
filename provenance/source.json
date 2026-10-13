@@ -1,6 +1,7 @@
 {
   "Schema": 1,
-  "SourceVersion": "0.2.0 with four collector compatibility follow-up fixes",
+  "SourceVersion": "0.2.0 with four collector compatibility follow-up fixes, plus the claude-and-astra-working-demo changes (Sigcheck suspicion ordering, wider redaction, stale summary fix)",
+  "DemoBranch": "claude-and-astra-working-demo: a working demo built on tested-140, kept separate from main. See docs/CLAUDE-ASTRA-DEMO.md and patches/tested-140-to-claude-astra-demo.patch. No cleanup capability added; honest scope unchanged.",
   "UpstreamSnapshot": {
     "File": "Sim Cleaner tested prototype.zip",
     "Bytes": 118473,
@@ -16,16 +17,15 @@
     "VerifiedManifestEntries": 25
   },
   "ReviewedSourceSHA256": {
-    "Inspect-Windows.ps1": "35AFB692F374EDCD6BCC3C68C1F8050095C90AD063341F790DCDD43761F7C7C3",
+    "Inspect-Windows.ps1": "659E2F25E24897E8B5E951D24B10F8C8D6A8B497828A4E76556BEA76A07A0FF8",
     "Launch-SimCleaner.ps1": "D0486C577B390D4AFBABDD65304F700AE8C6E15950F21DBC297E717E84E32893",
-    "Safety.ps1": "09B00F50C1F5FB6EB7C2AF03C5B8436C6096120A06CEB848063165F7FFCCB4F2",
+    "Safety.ps1": "F458C6AD234EE376E7AA94C740E35C09C8816E337EEAB75E1CB8C69FB1B2AA86",
     "SimCleaner.ps1": "2E519810E02F76FED93C96D27108AA29F28E2FFCC891433011B272F133987001",
-    "Tests/Test-SimCleaner.ps1": "F7ACE629D7D9C7390348526465FC1A8213E61D78B76F4C7C9BD5159D0DA42E0B",
+    "Tests/Test-SimCleaner.ps1": "B0AB4383539A375CE481F3CAFE027D886E47B2642D3486A560DB9CE7B3BF7A8F",
     "Tests/historical-scan-fixture.json": "5CB83B0CD5B98EA5748B8B1D0041B4B0318615CE4986373E17245829C1F9E37C"
   },
   "ByteIdenticalToPriorReviewedSnapshot": [
     "Launch-SimCleaner.ps1",
-    "Safety.ps1",
     "SimCleaner.ps1",
     "Tests/historical-scan-fixture.json"
   ],

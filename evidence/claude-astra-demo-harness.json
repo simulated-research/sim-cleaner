@@ -1,0 +1,27 @@
+{
+  "Scope": "Inert harness run for the claude-and-astra-working-demo branch. AST-loaded reviewed definitions; mocked Defender/CIM/events/tools; local atomic writes; inert output-only/process-timeout fixtures. No live scans, remediation, updates, downloads, reboot, EICAR, settings changes or sample uploads. No Windows run; no live Defender.",
+  "Runtime": "PowerShell 7.4.6 on Linux (cloud container)",
+  "TotalCases": 142,
+  "RealFilesOnLinux": {
+    "Passed": 91,
+    "Failed": 51,
+    "Note": "49 of 51 failures are the Windows-only Assert-SimLocalPath absolute-local-drive-path validator refusing Linux paths; the other 2 are the same class of 'no C: drive on Linux' artifact. None are logic defects."
+  },
+  "WithPosixTestShim": {
+    "Passed": 141,
+    "Failed": 1,
+    "ShimDescription": "A POSIX path shim was applied ONLY to a throwaway copy's Assert-SimLocalPath so the test environment accepts Linux paths. The shipped Safety.ps1 on this branch is NOT shimmed.",
+    "RemainingFailure": "Reparse ancestor rejected before descendant probe (inert mocks): fails with 'a drive with the name C does not exist', a Linux-only artifact inside a reparse mock, not a logic defect."
+  },
+  "NewCases": [
+    "Wider redaction covers common token and key shapes (pass)",
+    "Suspicion score ranks unsigned temp file above signed program file (pass)"
+  ],
+  "Regressions": "None. No previously passing case failed.",
+  "UpstreamWindowsRecord": "140/140 on PowerShell 7.6.5 on Windows (see VALIDATION.md and evidence/local-test-results.json). Not repeated on Windows for this branch.",
+  "ChangedSourceFiles": [
+    "Inspect-Windows.ps1",
+    "Safety.ps1",
+    "Tests/Test-SimCleaner.ps1"
+  ]
+}
