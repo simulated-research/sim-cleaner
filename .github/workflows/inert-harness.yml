@@ -25,7 +25,16 @@ jobs:
         shell: pwsh
         run: |
           $out = Join-Path $env:RUNNER_TEMP ("InertResults-" + [guid]::NewGuid().ToString('N'))
+          # The harness exits 1 on failure but falls through on success, leaving a
+          # stale $LASTEXITCODE from a bounded-runner child (a case that exits 7 by
+          # design). Decide pass/fail from the authoritative results file instead.
           ./Tests/Test-SimCleaner.ps1 -OutputDirectory $out
+          $resultFile = Join-Path $out 'test-results.json'
+          if (-not (Test-Path $resultFile)) { Write-Error 'Harness produced no results file'; exit 1 }
+          $r = Get-Content $resultFile -Raw | ConvertFrom-Json
+          Write-Host "Inert harness: $($r.Passed) passed, $($r.Failed) failed on $($r.Runtime)"
+          if ($r.Failed -gt 0) { exit 1 }
+          exit 0
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4  # consider pinning to a commit SHA
