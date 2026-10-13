@@ -1,0 +1,1266 @@
+--- a/Inspect-Windows.ps1
++++ b/Inspect-Windows.ps1
+@@ -6,31 +6,35 @@
+     [string]$ToolDirectory = '',
+     [ValidateRange(1,60)][int]$SocketSamples = 6,
+     [ValidateRange(1,30)][int]$SampleIntervalSeconds = 10,
+-    [switch]$ValidateOnly
++    [switch]$ValidateOnly,
++    [switch]$UseMicrosoftTools,
++    [switch]$DownloadMicrosoftTools,
++    [switch]$AcceptToolEula,
++    [switch]$VerifyProcessSignatures
+ )
+ 
+ # Inspection only: no firewall changes, service changes, repairs, quarantine,
+ # password queries, browser-history reads, or VirusTotal submissions.
+ $ErrorActionPreference = 'Stop'
++. (Join-Path $PSScriptRoot 'Safety.ps1')
+ $inspectionComputer = Get-CimInstance Win32_ComputerSystem
+-$inspectionMatches = if ($ExpectedDevice -eq 'Gigabyte') {
+-    $inspectionComputer.Manufacturer -match 'GIGABYTE' -and $inspectionComputer.Model -match 'G6\s+KF'
+-} else {
+-    $inspectionComputer.Manufacturer -match 'HP|Hewlett' -and $inspectionComputer.Model -match 'Victus'
+-}
++$inspectionMatches = Test-SimTarget $inspectionComputer $ExpectedDevice
+ if (-not $inspectionMatches) {
+     Write-Host ('TARGET MISMATCH: Expected {0}; this device reports {1} / {2}. No inspection performed.' -f $ExpectedDevice,$inspectionComputer.Manufacturer,$inspectionComputer.Model)
+-    exit 2
++    throw 'Target mismatch; inspection blocked.'
+ }
+ if ($ValidateOnly) {
+     Write-Host ('Target verified: {0} / {1}' -f $inspectionComputer.Manufacturer,$inspectionComputer.Model)
+-    exit 0
++    return
+ }
+ if (-not $OutputDirectory) { $OutputDirectory = Join-Path $PSScriptRoot 'Reports' }
+ if (-not $ToolDirectory) { $ToolDirectory = Join-Path $PSScriptRoot 'Tools' }
+-$inspectionRunDirectory = Join-Path ([IO.Path]::GetFullPath($OutputDirectory)) ($ExpectedDevice + '-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+-New-Item -ItemType Directory -Path $inspectionRunDirectory -Force | Out-Null
+-New-Item -ItemType Directory -Path $ToolDirectory -Force | Out-Null
++$inspectionLock=Enter-SimLock
++try {
++$inspectionRunDirectory = Join-Path (Assert-SimLocalPath ([IO.Path]::GetFullPath($OutputDirectory))) ($ExpectedDevice + '-' + [guid]::NewGuid().ToString('N'))
++New-Item -ItemType Directory -Path $inspectionRunDirectory -ErrorAction Stop | Out-Null
++if($UseMicrosoftTools -and -not $AcceptToolEula){throw 'Optional Sysinternals use requires explicit -AcceptToolEula after reviewing Microsoft agreements.'}
++if($UseMicrosoftTools){[void](Assert-SimLocalPath ([IO.Path]::GetFullPath($ToolDirectory)))}
+ $inspectionIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
+ $inspectionPrincipal = New-Object Security.Principal.WindowsPrincipal($inspectionIdentity)
+ $inspectionElevated = $inspectionPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+@@ -39,19 +43,26 @@
+     Device = [ordered]@{Manufacturer=$inspectionComputer.Manufacturer;Model=$inspectionComputer.Model;Expected=$ExpectedDevice;Elevated=$inspectionElevated}
+     Scope = 'Local metadata, security state, startup signatures, socket samples, driver and error-log evidence. No remediation.'
+     ConfigurationChangesApplied = $false
++    OptionalToolsRequested = $UseMicrosoftTools.IsPresent
++    ToolEulaAcceptanceRequested = $AcceptToolEula.IsPresent
++    FirewallPolicyStore = 'ActiveStore'
++    NativeOutputEncoding = 'Strict ASCII; localized/non-ASCII native output is unavailable rather than guessed'
++    ExternalToolOutputEncoding = 'Strict UTF-16LE with BOM required; integration acceptance pending'
+     Limitations = @()
+ }
+ 
+ function Get-InspectionSection {
+-    param([string]$SectionName,[scriptblock]$Read)
++    param([string]$SectionName,[scriptblock]$Read,[switch]$Singleton,[string[]]$Required=@())
+     Write-Host ('Collecting: ' + $SectionName)
+-    try { return [ordered]@{Status='Retrieved';Data=@(& $Read)} }
+-    catch { return [ordered]@{Status='Unavailable';Reason=($_.Exception.Message -replace '(?i)(password|api[_-]?key|access[_-]?token|authorization)\s*[:=]\s*\S+','$1=[redacted]')} }
++    if(($SectionName -match '^Microsoft tool|^Autoruns startup|^Sigcheck review' -and -not $UseMicrosoftTools) -or ($SectionName -eq 'Accessible running-executable signatures' -and -not $VerifyProcessSignatures)) { return [ordered]@{Status='Skipped';Data=@();Error='Optional scope not requested'} }
++    $section=Read-SimSection -Query $Read -Singleton:$Singleton -Required $Required
++    if($section.Status -eq 'Unavailable'){$section.Error=Protect-SimText $section.Error}
++    return $section
+ }
+ 
+ function Get-InspectionProcessMap {
+     $processMap = @{}
+-    foreach ($inspectionProcess in @(Get-Process -ErrorAction SilentlyContinue)) {
++    foreach ($inspectionProcess in @(Get-Process -ErrorAction Stop)) {
+         $processMap[[int]$inspectionProcess.Id] = [ordered]@{Name=$inspectionProcess.ProcessName;Path=$inspectionProcess.Path;Handles=$inspectionProcess.HandleCount;WorkingSetMB=[math]::Round($inspectionProcess.WorkingSet64/1MB,1)}
+     }
+     return $processMap
+@@ -75,49 +86,163 @@
+ 
+ function Get-VerifiedMicrosoftTool {
+     param([string]$Name,[string]$ArchiveUrl,[string]$BinaryName)
+-    $toolFolder = Join-Path $ToolDirectory $Name
++    $expected= switch($Name){'Autoruns'{'Autorunsc64.exe'}'Sigcheck'{'sigcheck64.exe'}default{throw 'Unsupported collector.'}}
++    if($BinaryName -cne $expected){throw 'Unexpected collector filename.'}
++    $uri = [uri]$ArchiveUrl
++    if ($uri.Scheme -ne 'https' -or $uri.Host -ne 'download.sysinternals.com' -or $uri.UserInfo) { throw 'Only official Sysinternals HTTPS acquisition is allowed.' }
++    if(-not $DownloadMicrosoftTools){throw 'Tool acquisition requires explicit -DownloadMicrosoftTools; no automatic download/cache execution.'}
++    $toolFolder = Join-Path ([IO.Path]::GetFullPath($ToolDirectory)) ($Name+'-'+[guid]::NewGuid().ToString('N'))
++    [void](Assert-SimLocalPath $toolFolder)
+     $toolBinary = Join-Path $toolFolder $BinaryName
+-    if (-not (Test-Path -LiteralPath $toolBinary)) {
+-        New-Item -ItemType Directory -Path $toolFolder -Force | Out-Null
+-        $toolArchive = Join-Path $ToolDirectory ($Name + '.zip')
+-        $uri = [uri]$ArchiveUrl
+-        if ($uri.Scheme -ne 'https' -or $uri.Host -ne 'download.sysinternals.com') { throw 'Tool download is not an official Microsoft Sysinternals HTTPS URL.' }
+-        Write-Host ('Downloading Microsoft ' + $Name)
+-        Invoke-WebRequest -Uri $ArchiveUrl -OutFile $toolArchive -TimeoutSec 40 -UseBasicParsing
+-        Expand-Archive -LiteralPath $toolArchive -DestinationPath $toolFolder -Force
+-    }
++    New-Item -ItemType Directory -Path $toolFolder -ErrorAction Stop | Out-Null
++    $toolArchive = Join-Path $toolFolder 'download.zip'
++    Invoke-WebRequest -Uri $ArchiveUrl -OutFile $toolArchive -TimeoutSec 40 -MaximumRedirection 0 -UseBasicParsing -ErrorAction Stop
++    $zip=[IO.Compression.ZipFile]::OpenRead($toolArchive)
++    try {
++        $entries=@($zip.Entries | Where-Object {$_.FullName -ceq $BinaryName})
++        if($entries.Count -ne 1 -or $entries[0].Length -gt 32MB){throw 'Collector archive member invalid or too large.'}
++        [IO.Compression.ZipFileExtensions]::ExtractToFile($entries[0],$toolBinary,$false)
++    } finally {$zip.Dispose()}
++    [void](Assert-SimLocalPath $toolBinary -Leaf)
++    $verificationHandle=[IO.File]::Open($toolBinary,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
++    try {
+     $signature = Get-AuthenticodeSignature -LiteralPath $toolBinary
+-    if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Microsoft Corporation') { throw ('Microsoft signature verification failed for ' + $Name + '. It was not executed.') }
+-    [ordered]@{Name=$Name;Path=$toolBinary;SignatureStatus=[string]$signature.Status;Signer=$signature.SignerCertificate.Subject;SHA256=(Get-FileHash -LiteralPath $toolBinary -Algorithm SHA256).Hash}
++    if ($signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate -or $signature.SignerCertificate.GetNameInfo([Security.Cryptography.X509Certificates.X509NameType]::SimpleName,$false) -cne 'Microsoft Corporation' -or $signature.SignerCertificate.Subject -notmatch '(?:^|,\s*)O=Microsoft Corporation(?:,|$)') { throw ('Microsoft publisher validation failed for ' + $Name) }
++    $version=[Diagnostics.FileVersionInfo]::GetVersionInfo($toolBinary)
++    if($version.OriginalFilename -notmatch ('^'+[regex]::Escape(($BinaryName -replace '64\.exe$',''))+'(?:64)?\.exe$') -or -not $version.FileVersion){throw 'Collector product/version metadata unsupported.'}
++    [ordered]@{Name=$Name;Path=$toolBinary;SourceURL=$ArchiveUrl;RedirectsAllowed=$false;AcquiredAt=(Get-Date).ToString('o');VerifiedAt=(Get-Date).ToString('o');FileVersion=$version.FileVersion;OriginalFilename=$version.OriginalFilename;OutputEncodingContract='Strict UTF-16LE with BOM required';SignatureStatus=[string]$signature.Status;Signer=$signature.SignerCertificate.Subject;SHA256=(Get-FileHash -LiteralPath $toolBinary -Algorithm SHA256).Hash;HashMeaning='Recorded fingerprint; no trusted vendor expected hash available'}
++    } finally {$verificationHandle.Dispose()}
+ }
+ 
+ function Invoke-InspectionTool {
+-    param([string]$Binary,[string[]]$Arguments,[int]$TimeoutSeconds=180)
+-    # Capture in memory. Autorunsc's raw output can contain command-line arguments;
+-    # only a selected metadata projection is written into the deliverable report.
+-    $start = New-Object Diagnostics.ProcessStartInfo
+-    $start.FileName = $Binary
+-    $start.Arguments = ($Arguments -join ' ')
+-    $start.UseShellExecute = $false
+-    $start.CreateNoWindow = $true
+-    $start.RedirectStandardOutput = $true
+-    $start.RedirectStandardError = $true
+-    $start.StandardOutputEncoding = [Text.Encoding]::Unicode
+-    $start.StandardErrorEncoding = [Text.Encoding]::Unicode
+-    $native = New-Object Diagnostics.Process
+-    $native.StartInfo = $start
+-    [void]$native.Start()
+-    $outputTask = $native.StandardOutput.ReadToEndAsync()
+-    $errorTask = $native.StandardError.ReadToEndAsync()
+-    if (-not $native.WaitForExit($TimeoutSeconds*1000)) {
+-        # Terminate only this collector process, never a user application or service.
+-        try { $native.Kill() } catch { }
+-        throw 'Microsoft metadata collector timed out; no user application was stopped.'
+-    }
+-    $native.WaitForExit()
+-    $text = $outputTask.GetAwaiter().GetResult()
+-    if ($native.ExitCode -ne 0) { throw ('Microsoft collector returned exit code ' + $native.ExitCode + '; raw output was omitted.') }
+-    return $text.TrimStart([char]0xFEFF)
++    param([string]$Binary,[string[]]$Arguments,[int]$TimeoutSeconds=180,[string]$ExpectedHash='', [ValidateSet('','Ascii','Utf8','Utf16LE')][string]$OutputEncoding='')
++    [void](Assert-SimLocalPath $Binary -Leaf)
++    if(-not ('SimBoundedProcess' -as [type])) {
++        Add-Type -TypeDefinition @'
++using System;
++using System.Diagnostics;
++using System.IO;
++using System.Text;
++using System.Threading.Tasks;
++public static class SimBoundedProcess {
++    static async Task<string> Read(Stream stream,string contract,string channel) {
++        using(var bytes=new MemoryStream()) {
++            var buffer=new byte[4096]; int n;
++            while((n=await stream.ReadAsync(buffer,0,buffer.Length))>0) {
++                if(bytes.Length+n>4194304) throw new InvalidOperationException(channel+" output cap exceeded");
++                bytes.Write(buffer,0,n);
++            }
++            var raw=bytes.ToArray(); Encoding encoding; int offset=0;
++            if(contract=="Utf16LE") {
++                if(raw.Length>0 && (raw.Length<2||raw[0]!=255||raw[1]!=254)) throw new InvalidDataException(channel+" missing UTF-16LE BOM; output unavailable");
++                encoding=new UnicodeEncoding(false,false,true); if(raw.Length>0) offset=2;
++            } else if(contract=="Utf8") {
++                encoding=new UTF8Encoding(false,true);
++                if(raw.Length>=3&&raw[0]==239&&raw[1]==187&&raw[2]==191) offset=3;
++            } else {
++                encoding=Encoding.GetEncoding(20127,EncoderFallback.ExceptionFallback,DecoderFallback.ExceptionFallback);
++            }
++            string text;
++            try {text=encoding.GetString(raw,offset,raw.Length-offset);}
++            catch(DecoderFallbackException e) {throw new InvalidDataException(channel+" decoding failed under "+contract+" contract; output unavailable",e);}
++            if(text.Length>2097152) throw new InvalidOperationException(channel+" output cap exceeded");
++            return text;
++        }
++    }
++    public static string Run(string file,string[] args,int seconds,string contract,string expectedHash) {
++        using(var held=new FileStream(file,FileMode.Open,FileAccess.Read,FileShare.Read))
++        using(var p=new Process()) {
++            if(!String.IsNullOrEmpty(expectedHash)) {
++                using(var sha=System.Security.Cryptography.SHA256.Create()) {
++                    var hash=BitConverter.ToString(sha.ComputeHash(held)).Replace("-","");
++                    if(!String.Equals(hash,expectedHash,StringComparison.Ordinal)) throw new InvalidOperationException("Collector changed before launch");
++                }
++            }
++            p.StartInfo=new ProcessStartInfo(file) {UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true,WorkingDirectory=Path.GetDirectoryName(file)};
++            foreach(var arg in args) p.StartInfo.ArgumentList.Add(arg);
++            p.Start();
++            // Decode raw streams ourselves: no ambient code page, BOM auto-switch,
++            // or StreamReader replacement fallback is accepted.
++            var stdout=Read(p.StandardOutput.BaseStream,contract,"stdout"); var stderr=Read(p.StandardError.BaseStream,contract,"stderr");
++            var deadline=DateTime.UtcNow.AddSeconds(seconds);
++            try {
++                while(!p.WaitForExit(50)) {
++                    if(stdout.IsFaulted) throw stdout.Exception.Flatten().InnerExceptions[0];
++                    if(stderr.IsFaulted) throw stderr.Exception.Flatten().InnerExceptions[0];
++                    if(DateTime.UtcNow>deadline) throw new TimeoutException("Collector timeout");
++                }
++                try {if(!Task.WaitAll(new Task[]{stdout,stderr},1000)) throw new TimeoutException("Collector streams did not close");}
++                catch(AggregateException e) {throw e.Flatten().InnerExceptions[0];}
++                if(p.ExitCode!=0) throw new InvalidOperationException("Collector exit code "+p.ExitCode+"; raw diagnostics omitted");
++                return stdout.GetAwaiter().GetResult().TrimStart('\uFEFF');
++            } finally {if(!p.HasExited) {try{p.Kill();p.WaitForExit(1000);}catch{}}}
++        }
++    }
++}
++'@
++    }
++    if(-not $OutputEncoding){$OutputEncoding=if([IO.Path]::GetFileName($Binary) -match '^(autorunsc64|sigcheck64)\.exe$'){'Utf16LE'}else{'Ascii'}}
++    [SimBoundedProcess]::Run($Binary,$Arguments,$TimeoutSeconds,$OutputEncoding,$ExpectedHash)
++}
++function Invoke-InspectionNative([string]$Name,[string[]]$Arguments) {
++    $binary=Join-Path ([Environment]::GetFolderPath('System')) ($Name+'.exe')
++    [void](Assert-SimLocalPath $binary -Leaf)
++    Invoke-InspectionTool $binary $Arguments 30
++}
++function Get-InspectionCount($Section) {
++    if($Section.Status -notin @('Retrieved','Empty')){return 'Unknown'}
++    @($Section.Data | Where-Object {$null -ne $_}).Count
++}
++function Get-InspectionProblems($Value,[string]$Prefix='') {
++    if($Value -is [Collections.IDictionary]) {
++        if($Value.Status -in @('Unavailable','Skipped')){ "$Prefix : $($Value.Status) $($Value.Error)";return }
++        foreach($key in $Value.Keys){Get-InspectionProblems $Value[$key] ($Prefix+'/'+$key)}
++    } elseif($Value -is [array]){for($i=0;$i -lt $Value.Count;$i++){Get-InspectionProblems $Value[$i] ($Prefix+'/'+$i)}}
++}
++function Get-InspectionFirewallSummary($Network,$Profiles) {
++    $name=if($Network.NetworkCategory -eq 'DomainAuthenticated'){'Domain'}else{[string]$Network.NetworkCategory}
++    $profile=@($Profiles.Data | Where-Object {$_.Name -eq $name})
++    $enabled=if($Profiles.Status -eq 'Retrieved' -and $profile.Count -eq 1){$profile[0].Enabled}else{'Unknown'}
++    "Active network $($Network.InterfaceAlias): profile $name; firewall enabled: $enabled (ActiveStore; reachability/rule coverage unproven)"
++}
++function Get-InspectionInstalledProviders {
++    Read-SimSection {
++        $names=@([Diagnostics.Eventing.Reader.EventLogSession]::GlobalSession.GetProviderNames())
++        if($names.Count -eq 0){throw 'Installed publisher-name discovery returned no metadata; availability unknown.'}
++        $names
++    }
++}
++function Get-InspectionProviderCoverage([string[]]$ExpectedProviders,$AvailableProviders=$null) {
++    $installed=@();$absent=@();$unavailable=@();$details=@()
++    if($null -eq $AvailableProviders){$AvailableProviders=Get-InspectionInstalledProviders}
++    if($AvailableProviders.Status -ne 'Retrieved' -or @($AvailableProviders.Data).Count -eq 0) {
++        $unavailable=@($ExpectedProviders);$details=@($ExpectedProviders|ForEach-Object {[ordered]@{Name=$_;Status='Unavailable';Error=$AvailableProviders.Error}})
++    } else {
++        $lookup=@{};foreach($provider in $AvailableProviders.Data){$lookup[[string]$provider]=[string]$provider}
++        foreach($name in $ExpectedProviders) {
++            if($lookup.ContainsKey($name)){$installed+=$lookup[$name];$details+=[ordered]@{Name=$name;Status='Installed'}}
++            else{$absent+=$name;$details+=[ordered]@{Name=$name;Status='Absent'}}
++        }
++    }
++    [ordered]@{Status=if($unavailable.Count){'Unavailable'}else{'Retrieved'};Data=@();ExpectedProviders=$ExpectedProviders;InstalledProviders=$installed;AbsentProviders=$absent;UnavailableProviders=$unavailable;Details=$details;Error=if($unavailable.Count){'Provider availability unknown; query coverage incomplete'}else{$null}}
++}
++function Get-InspectionEventSection([string]$LogName,[hashtable]$Filter,[int]$Limit,$ProviderCoverage=$null) {
++    $section=Read-SimSection {
++        if($ProviderCoverage) {
++            if($ProviderCoverage.Status -ne 'Retrieved'){throw 'Provider availability incomplete; permission/metadata failure is not empty history.'}
++            if($ProviderCoverage.InstalledProviders.Count -eq 0){throw 'No supported providers installed; event coverage unavailable.'}
++            $Filter.ProviderName=@($ProviderCoverage.InstalledProviders)
++        }
++        try {Get-WinEvent -FilterHashtable $Filter -MaxEvents $Limit -ErrorAction Stop | Select-Object TimeCreated,ProviderName,Id,LevelDisplayName}
++        catch {
++            if($_.FullyQualifiedErrorId -notlike 'NoMatchingEventsFound*'){throw}
++            $log=@(Get-WinEvent -ListLog $LogName -ErrorAction Stop)
++            if($log.Count -ne 1 -or $log[0].IsEnabled -ne $true){throw 'No matches cannot establish readable enabled event coverage.'}
++        }
++    }
++    $section.Log=$LogName;$section.Limit=$Limit;$section.WindowStart=$Filter.StartTime;$section.CapturedAt=(Get-Date).ToString('o');$section.CapReached=if($section.Status -in @('Retrieved','Empty')){($section.Data.Count -ge $Limit)}else{$null}
++    if($ProviderCoverage){$section.ProviderCoverage=$ProviderCoverage}
++    return $section
+ }
+ 
+ $inspectionReport.OperatingSystem = Get-InspectionSection 'Windows and firmware metadata' {
+@@ -125,14 +250,14 @@
+     $bios = Get-CimInstance Win32_BIOS
+     [ordered]@{Windows=$os.Caption;Version=$os.Version;Build=$os.BuildNumber;Architecture=$os.OSArchitecture;BootTime=$os.LastBootUpTime.ToString('o');TotalMemoryMB=[math]::Round($inspectionComputer.TotalPhysicalMemory/1MB);BiosManufacturer=$bios.Manufacturer;BiosVersion=$bios.SMBIOSBIOSVersion;BiosReleaseDate=$bios.ReleaseDate}
+ }
+-$inspectionReport.Defender = Get-InspectionSection 'Defender protection and detection history' {
++$inspectionReport.Defender = Get-InspectionSection -Singleton -Required AMServiceEnabled,AntivirusEnabled,AMRunningMode 'Defender protection and detection history' {
+     Get-MpComputerStatus | Select-Object AMServiceEnabled,AntivirusEnabled,RealTimeProtectionEnabled,BehaviorMonitorEnabled,IoavProtectionEnabled,NISEnabled,IsTamperProtected,AntivirusSignatureLastUpdated,AntivirusSignatureVersion,QuickScanStartTime,QuickScanEndTime,FullScanStartTime,FullScanEndTime,AMRunningMode
+ }
+ $inspectionReport.DefenderDetections = Get-InspectionSection 'Defender recorded detections' {
+     Get-MpThreatDetection | Select-Object ThreatID,InitialDetectionTime,LastThreatStatusChangeTime,ActionSuccess,ThreatStatusID
+ }
+ $inspectionReport.SecurityProducts = Get-InspectionSection 'Registered antivirus products' { Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntiVirusProduct | Select-Object displayName,productState }
+-$inspectionReport.Firewall = Get-InspectionSection 'Firewall profiles' { Get-NetFirewallProfile | Select-Object Name,Enabled,DefaultInboundAction,DefaultOutboundAction }
++$inspectionReport.Firewall = Get-InspectionSection 'Effective firewall profiles' { Get-NetFirewallProfile -PolicyStore ActiveStore -ErrorAction Stop | Select-Object Name,Enabled,DefaultInboundAction,DefaultOutboundAction }
+ $inspectionReport.ActiveNetworks = Get-InspectionSection 'Active network categories' { Get-NetConnectionProfile | Select-Object InterfaceAlias,NetworkCategory,IPv4Connectivity,IPv6Connectivity }
+ $inspectionReport.Adapters = Get-InspectionSection 'Network adapters and drivers' { Get-NetAdapter | Select-Object Name,InterfaceDescription,Status,LinkSpeed,DriverInformation }
+ $inspectionReport.AdapterCounters = Get-InspectionSection 'Network error and discard counters' { Get-NetAdapterStatistics | Select-Object Name,ReceivedPacketErrors,OutboundPacketErrors,ReceivedDiscardedPackets,OutboundDiscardedPackets }
+@@ -140,22 +265,24 @@
+ $inspectionReport.IpConfiguration = Get-InspectionSection 'IP and DNS configuration' { Get-NetIPConfiguration | Select-Object InterfaceAlias,@{Name='IPv4';Expression={$_.IPv4Address.IPAddress}},@{Name='Gateway';Expression={$_.IPv4DefaultGateway.NextHop}},@{Name='DNS';Expression={$_.DNSServer.ServerAddresses}} }
+ $inspectionReport.Proxy = Get-InspectionSection 'Proxy configuration' {
+     $internet = Get-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
+-    [ordered]@{Enabled=$internet.ProxyEnable;ProxyServer=$internet.ProxyServer;AutoConfigURL=$internet.AutoConfigURL;WinHttp=(netsh winhttp show proxy | Out-String).Trim()}
++    [ordered]@{Enabled=$internet.ProxyEnable;ProxyServerConfigured=[bool]$internet.ProxyServer;AutoConfigURLConfigured=[bool]$internet.AutoConfigURL;SensitiveEndpointsOmitted=$true}
+ }
+ $inspectionReport.DynamicPorts = Get-InspectionSection 'Dynamic and excluded port ranges' {
+-    foreach ($family in @('ipv4','ipv6')) { foreach ($protocol in @('tcp','udp')) { [ordered]@{Family=$family;Protocol=$protocol;Range=(netsh int $family show dynamicport $protocol | Out-String).Trim();Exclusions=(netsh int $family show excludedportrange ('protocol=' + $protocol) | Out-String).Trim()} } }
++    foreach ($family in @('ipv4','ipv6')) { foreach ($protocol in @('tcp','udp')) { [ordered]@{Family=$family;Protocol=$protocol;Range=Invoke-InspectionNative 'netsh' @('int',$family,'show','dynamicport',$protocol);Exclusions=Invoke-InspectionNative 'netsh' @('int',$family,'show','excludedportrange',('protocol='+$protocol))} } }
+ }
+ $inspectionReport.Disk = Get-InspectionSection 'Storage capacity and health status' { Get-Volume | Where-Object {$_.DriveLetter -eq 'C'} | Select-Object DriveLetter,HealthStatus,SizeRemaining,Size }
+ $inspectionReport.SecureBootState = Get-InspectionSection 'Reported Secure Boot state (no setting changes)' { Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\SecureBoot\State' | Select-Object UEFISecureBootEnabled }
+-$inspectionReport.PowerPlan = Get-InspectionSection 'Active Windows power plan' { [ordered]@{Plan=(powercfg /getactivescheme | Out-String).Trim()} }
++$inspectionReport.PowerPlan = Get-InspectionSection 'Active Windows power plan' { [ordered]@{Plan=Invoke-InspectionNative 'powercfg' @('/getactivescheme')} }
+ $inspectionReport.Memory = Get-InspectionSection 'Memory and paging snapshot' { Get-CimInstance Win32_PerfFormattedData_PerfOS_Memory | Select-Object AvailableMBytes,PercentCommittedBytesInUse,PagesPersec }
+ $inspectionReport.Processes = Get-InspectionSection 'Process executable metadata (no arguments)' {
+-    Get-Process | Select-Object ProcessName,Id,Path,HandleCount,@{Name='WorkingSetMB';Expression={[math]::Round($_.WorkingSet64/1MB,1)}},CPU
++    $script:inspectionProcessSnapshot=@(Get-Process -ErrorAction Stop)
++    $script:inspectionProcessSnapshot | Select-Object ProcessName,Id,Path,HandleCount,@{Name='WorkingSetMB';Expression={[math]::Round($_.WorkingSet64/1MB,1)}},CPU
+ }
+ $inspectionReport.ProcessSignatures = Get-InspectionSection 'Accessible running-executable signatures' {
+-    $executables = @(Get-Process | Where-Object {$_.Path} | Select-Object -ExpandProperty Path -Unique)
++    if(-not $VerifyProcessSignatures){throw 'Optional signature inspection skipped; use -VerifyProcessSignatures with network/certificate-service disclosure.'}
++    $executables = @($script:inspectionProcessSnapshot | Where-Object {$_.Path} | Select-Object -ExpandProperty Path -Unique)
+     foreach ($executable in $executables) {
+-        try { $signature = Get-AuthenticodeSignature -LiteralPath $executable; [ordered]@{Path=$executable;Status=[string]$signature.Status;Signer=$signature.SignerCertificate.Subject} }
++        try { [void](Assert-SimLocalPath $executable -Leaf); $signature = Get-AuthenticodeSignature -LiteralPath $executable; [ordered]@{Path=$executable;Status=[string]$signature.Status;Signer=$signature.SignerCertificate.Subject} }
+         catch { [ordered]@{Path=$executable;Status='Unavailable';Signer=$null} }
+     }
+ }
+@@ -167,17 +294,17 @@
+     $processMap = Get-InspectionProcessMap
+     Get-NetTCPConnection | Where-Object {$_.State -in @('Established','CloseWait','Bound')} | ForEach-Object { [ordered]@{State=[string]$_.State;LocalAddress=$_.LocalAddress;LocalPort=$_.LocalPort;RemoteAddress=$_.RemoteAddress;RemotePort=$_.RemotePort;ProcessId=$_.OwningProcess;Process=$processMap[[int]$_.OwningProcess].Name} }
+ }
+-$inspectionReport.SystemEvents = Get-InspectionSection 'Seven days of selected system faults' {
+-    Get-WinEvent -FilterHashtable @{LogName='System';StartTime=(Get-Date).AddDays(-7);Level=@(1,2,3)} -MaxEvents 500 | Where-Object {$_.ProviderName -match 'Tcpip|WLAN|Netwtw|NDIS|WHEA|Disk|Ntfs|stor|Kernel-Processor-Power|Kernel-Power|Service Control Manager'} | Select-Object TimeCreated,ProviderName,Id,LevelDisplayName,Message
+-}
+-$inspectionReport.ApplicationCrashes = Get-InspectionSection 'Seven days of application crash records' {
+-    Get-WinEvent -FilterHashtable @{LogName='Application';StartTime=(Get-Date).AddDays(-7);Id=@(1000,1001,1026)} -MaxEvents 150 | Select-Object TimeCreated,ProviderName,Id,@{Name='Details';Expression={$safeCrashText=$_.Message -replace '(?i)(password|api[_-]?key|access[_-]?token|authorization)\s*[:=]\s*\S+','$1=[redacted]'; $safeCrashText.Substring(0,[math]::Min(6000,$safeCrashText.Length))}}
+-}
+-$inspectionReport.WiFiEvents = Get-InspectionSection 'Wi-Fi connect/disconnect and authentication events' {
+-    Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-WLAN-AutoConfig/Operational';StartTime=(Get-Date).AddDays(-7);Id=@(8001,8002,8003,11004,11005,11006)} -MaxEvents 100 | Select-Object TimeCreated,Id,LevelDisplayName
+-}
++$inspectionInstalledProviders=Get-InspectionInstalledProviders
++$inspectionProviderCoverage=Get-InspectionProviderCoverage @('Tcpip','Microsoft-Windows-TCPIP','Microsoft-Windows-WLAN-AutoConfig','Microsoft-Windows-NDIS','Microsoft-Windows-WHEA-Logger','WHEA-Logger','Disk','Ntfs','stornvme','storahci','Microsoft-Windows-Kernel-Processor-Power','Microsoft-Windows-Kernel-Power','Service Control Manager','Netwtw10','Netwtw12','Netwtw14') $inspectionInstalledProviders
++$inspectionReport.SystemEvents=Get-InspectionEventSection 'System' @{LogName='System';StartTime=(Get-Date).AddDays(-7);Level=@(1,2,3)} 500 $inspectionProviderCoverage
++$tcpProviders=Get-InspectionProviderCoverage @('Tcpip','Microsoft-Windows-TCPIP') $inspectionInstalledProviders
++$inspectionReport.TcpAllocationEvents=Get-InspectionEventSection 'System' @{LogName='System';StartTime=(Get-Date).AddDays(-7);Id=@(4231,4266,4227)} 500 $tcpProviders
++$inspectionReport.ApplicationCrashes=Get-InspectionEventSection 'Application' @{LogName='Application';StartTime=(Get-Date).AddDays(-7);Id=@(1000,1001,1026)} 150
++$inspectionReport.WiFiEvents=Get-InspectionEventSection 'Microsoft-Windows-WLAN-AutoConfig/Operational' @{LogName='Microsoft-Windows-WLAN-AutoConfig/Operational';StartTime=(Get-Date).AddDays(-7);Id=@(8001,8002,8003,11004,11005,11006)} 100
+ 
+ $inspectionReport.MicrosoftTools = Get-InspectionSection 'Microsoft tool signature verification' {
++    if(-not $UseMicrosoftTools){throw 'Optional Microsoft tools skipped by default.'}
++    Write-Host 'External collectors may inspect startup references, contact network paths/certificate services and accept Microsoft EULAs. No VirusTotal flags are used.'
+     Get-VerifiedMicrosoftTool 'Autoruns' 'https://download.sysinternals.com/files/Autoruns.zip' 'Autorunsc64.exe'
+     Get-VerifiedMicrosoftTool 'Sigcheck' 'https://download.sysinternals.com/files/Sigcheck.zip' 'sigcheck64.exe'
+ }
+@@ -186,20 +313,26 @@
+ $sigcheckTool = $inspectionToolRecords | Where-Object {$_.Name -eq 'Sigcheck'} | Select-Object -First 1
+ $inspectionReport.StartupEntries = Get-InspectionSection 'Autoruns startup audit and signature checks' {
+     if (-not $autorunsTool) { throw 'Verified Autorunsc was unavailable.' }
+-    $csv = Invoke-InspectionTool $autorunsTool.Path @('-accepteula','-nobanner','-a','*','-c','-s','-h')
++    [void](Assert-SimLocalPath $autorunsTool.Path -Leaf)
++    if((Get-FileHash -LiteralPath $autorunsTool.Path).Hash -cne $autorunsTool.SHA256){throw 'Collector changed since verification.'}
++    # Omit -s/-h: collect startup metadata first; only guarded local files get followups.
++    $csv = Invoke-InspectionTool $autorunsTool.Path @('-accepteula','-nobanner','-a','*','-c') -ExpectedHash $autorunsTool.SHA256
+     $rows = @($csv | ConvertFrom-Csv)
+     if ($rows.Count -eq 0 -or -not ($rows[0].PSObject.Properties.Name -contains 'Signer')) { throw 'Autoruns output could not be parsed; no clean result was inferred.' }
+-    $rows | Select-Object Entry,'Entry Location',Enabled,Category,Description,Signer,Company,'Image Path',Version,'SHA-256'
++    $rows | Select-Object Entry,'Entry Location',Enabled,Category,Description,Signer,Company,'Image Path',Version
+ }
+ $inspectionReport.SignatureFollowups = Get-InspectionSection 'Sigcheck review of accessible unverified startup files' {
+     if (-not $sigcheckTool) { throw 'Verified Sigcheck was unavailable.' }
+     $candidates = @($inspectionReport.StartupEntries.Data | Where-Object {$_.Signer -notmatch '^\(Verified\)' -and $_.'Image Path' -and $_.'Image Path' -notmatch '^File not found:'} | Select-Object -ExpandProperty 'Image Path' -Unique)
++    $inspectionReport.SignatureCandidateCoverage=[ordered]@{Total=$candidates.Count;Limit=30;OmittedByCap=[math]::Max(0,$candidates.Count-30)}
+     foreach ($candidate in ($candidates | Select-Object -First 30)) {
+-        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+-            $quotedPath = '"' + $candidate.Replace('"','') + '"'
+-            $checked = Invoke-InspectionTool $sigcheckTool.Path @('-accepteula','-nobanner','-a','-h',$quotedPath) 30
+-            [ordered]@{Path=$candidate;Result=$checked}
+-        } else { [ordered]@{Path=$candidate;Result='Not a readable regular file; signature status cannot be inferred from this path.'} }
++        try {
++            [void](Assert-SimLocalPath $candidate -Leaf)
++            [void](Assert-SimLocalPath $sigcheckTool.Path -Leaf)
++            if((Get-FileHash -LiteralPath $sigcheckTool.Path).Hash -cne $sigcheckTool.SHA256){throw 'Collector changed since verification.'}
++            $checked = Invoke-InspectionTool $sigcheckTool.Path @('-accepteula','-nobanner','-a','-h',$candidate) 30 -ExpectedHash $sigcheckTool.SHA256
++            [ordered]@{Path=$candidate;Result=Protect-SimText $checked}
++        } catch { [ordered]@{Path=Protect-SimText $candidate;Status='Skipped';Reason=Protect-SimText $_.Exception.Message} }
+     }
+ }
+ 
+@@ -209,45 +342,46 @@
+     if ($sampleIndex+1 -lt $SocketSamples) { Start-Sleep -Seconds $SampleIntervalSeconds }
+ }
+ $inspectionReport.CompletedAt = (Get-Date).ToString('o')
++$inspectionReport.EventCoverage=[ordered]@{WindowDays=7;SystemProviderFilter='Installed subset of explicit provider allowlist; absent/unknown providers recorded; other providers not covered';SystemLimit=500;SystemCapReached=$inspectionReport.SystemEvents.CapReached;TcpAllocationLimit=500;TcpAllocationCapReached=$inspectionReport.TcpAllocationEvents.CapReached;ApplicationLimit=150;ApplicationCapReached=$inspectionReport.ApplicationCrashes.CapReached;WifiLimit=100;WifiCapReached=$inspectionReport.WiFiEvents.CapReached;Meaning='Bounded snapshots; missing/truncated logs are not evidence of no faults'}
+ if (-not $inspectionElevated) { $inspectionReport.Limitations += 'Not elevated. Protected processes and some system/security metadata may be unavailable. No administrator prompt was automated.' }
+ $inspectionReport.Limitations += 'No antivirus scan with automatic remediation was started. No clean bill of health or absence of malware is established by this metadata inspection.'
+-$inspectionReport.Limitations += 'No raw packet capture, browser sessions, saved credentials, file uploads, or VirusTotal queries were requested.'
++$inspectionReport.Limitations += 'No raw packet capture, browser sessions, saved credentials or VirusTotal queries requested. Certificate/signature operations and opted-in tools can use network infrastructure. Defender can submit under existing policy.'
++$inspectionReport.Limitations += 'No TLS handshake, root-store integrity, revocation success or complete certificate-chain audit is established. Optional tools accept EULAs and create local cache/report files.'
+ $inspectionReport.Limitations += 'Router parental profiles still require authenticated router access. Laptop diagnostics do not establish their state.'
+ 
+ $jsonPath = Join-Path $inspectionRunDirectory 'inspection.json'
+-$inspectionReport | ConvertTo-Json -Depth 14 | Set-Content -LiteralPath $jsonPath -Encoding UTF8
+-$startupEntries = @($inspectionReport.StartupEntries.Data)
+-if ($startupEntries.Count -gt 0) { $startupEntries | Export-Csv -LiteralPath (Join-Path $inspectionRunDirectory 'startup-metadata.csv') -NoTypeInformation -Encoding UTF8 }
++Save-SimReport $inspectionReport $jsonPath
++$startupEntries = @($inspectionReport.StartupEntries.Data | Where-Object {$null -ne $_})
++# Startup metadata remains in JSON; avoid formula interpretation of untrusted CSV cells.
+ $summary = New-Object Collections.Generic.List[string]
+ $summary.Add('WINDOWS INSPECTION - ' + $ExpectedDevice)
+ $summary.Add('Device: ' + $inspectionComputer.Manufacturer + ' / ' + $inspectionComputer.Model)
+ $summary.Add('Window: ' + $inspectionReport.StartedAt + ' through ' + $inspectionReport.CompletedAt)
+ $summary.Add('No remediation or security configuration changes applied.')
+ $summary.Add('')
+-$portFailures = @($inspectionReport.SystemEvents.Data | Where-Object {$_.ProviderName -match 'Tcpip' -and $_.Id -in @(4231,4266,4227)})
+-$summary.Add('Port-allocation failure events in retrieved history: ' + $portFailures.Count)
++$portFailures = @($inspectionReport.TcpAllocationEvents.Data | Where-Object {$_.Id -in @(4231,4266,4227)})
++$summary.Add('Port-allocation failure events in dedicated bounded TCP/IP history: ' + $(if($inspectionReport.TcpAllocationEvents.Status -in @('Retrieved','Empty')){$portFailures.Count}else{'Unknown'}))
+ foreach ($event in ($portFailures | Select-Object -First 8)) { $summary.Add(('  {0} | {1} | event {2}' -f $event.TimeCreated,$event.ProviderName,$event.Id)) }
+ foreach ($network in @($inspectionReport.ActiveNetworks.Data)) {
+-    $profileName = [string]$network.NetworkCategory
+-    $firewall = $inspectionReport.Firewall.Data | Where-Object {$_.Name -eq $profileName} | Select-Object -First 1
+-    $summary.Add(('Active network {0}: profile {1}; firewall enabled: {2}' -f $network.InterfaceAlias,$profileName,$firewall.Enabled))
+-}
+-$summary.Add('Startup entries retrieved: ' + $startupEntries.Count)
+-$unverified = @($startupEntries | Where-Object {$_.Signer -notmatch '^\(Verified\)' -and $_.'Image Path'})
+-$missing = @($unverified | Where-Object {$_.'Image Path' -match '^File not found:'})
+-$summary.Add('Startup references without verified signer: ' + $unverified.Count + ' (including ' + $missing.Count + ' missing-file references).')
++    $summary.Add((Get-InspectionFirewallSummary $network $inspectionReport.Firewall))
++}
++$summary.Add('Startup entries retrieved: ' + (Get-InspectionCount $inspectionReport.StartupEntries))
++$summary.Add('Startup entries are metadata only; unverified/unchecked references do not establish malware or signature validity.')
+ $summary.Add('Unsigned, missing, or directory entries are review items; none alone proves malware.')
+-$summary.Add('Application crash records retrieved: ' + @($inspectionReport.ApplicationCrashes.Data).Count)
++$summary.Add('Application crash records retrieved: ' + (Get-InspectionCount $inspectionReport.ApplicationCrashes))
+ $summary.Add('')
+ $summary.Add('Unavailable sections:')
+-foreach ($section in $inspectionReport.GetEnumerator()) { if ($section.Value -is [Collections.IDictionary] -and $section.Value.Status -eq 'Unavailable') { $summary.Add('  ' + $section.Key + ': ' + $section.Value.Reason) } }
++foreach($problem in @(Get-InspectionProblems $inspectionReport)){$summary.Add('  '+$problem)}
+ $summary.Add('')
+ $summary.Add('Limitations:')
+ foreach ($limitation in $inspectionReport.Limitations) { $summary.Add('  ' + $limitation) }
+ $summary.Add('')
+-$summary.Add('Details: inspection.json and startup-metadata.csv in this folder.')
++$summary.Add('Details: inspection.json; no untrusted startup CSV generated.')
+ $summary.Add('References: https://learn.microsoft.com/en-us/sysinternals/downloads/autoruns')
+ $summary.Add('https://learn.microsoft.com/en-us/sysinternals/downloads/sigcheck')
+ $summary.Add('https://learn.microsoft.com/en-us/troubleshoot/windows-client/networking/tcp-ip-port-exhaustion-troubleshooting')
+-$summary | Set-Content -LiteralPath (Join-Path $inspectionRunDirectory 'SUMMARY.txt') -Encoding UTF8
+-Write-Host ('Inspection complete: ' + $inspectionRunDirectory)
++Save-SimReport ([ordered]@{Lines=@($summary | ForEach-Object {Protect-SimText $_})}) (Join-Path $inspectionRunDirectory 'summary.json')
++Write-Host ('Inspection evidence saved: ' + $inspectionRunDirectory)
++$inspectionPartial=@(Get-InspectionProblems $inspectionReport | Where-Object {$_ -match ': Unavailable'}).Count -gt 0
++} finally {Exit-SimLock $inspectionLock}
++if($inspectionPartial){exit 3}
+--- /dev/null
++++ b/Launch-SimCleaner.ps1
+@@ -0,0 +1,29 @@
++#requires -Version 5.1
++[CmdletBinding()]
++param([ValidateSet('SimCleaner.ps1','Inspect-Windows.ps1')][string]$Script,[ValidateSet('Victus','Gigabyte')][string]$ExpectedDevice,[switch]$ValidateOnly,[ValidateSet('Menu','Status','CleanupPlan')][string]$Action='Menu')
++$ErrorActionPreference='Stop'
++try {
++    $runtime=$env:SIMCLEANER_PWSH
++    if(-not $runtime){$runtime=Join-Path $env:ProgramFiles 'PowerShell\7\pwsh.exe'}
++    if($runtime -notmatch '^[A-Za-z]:\\' -or $runtime.Substring(2).Contains(':')){throw 'An absolute local reviewed runtime path is required.'}
++    $runtime=[IO.Path]::GetFullPath($runtime)
++    $drive=New-Object IO.DriveInfo($runtime.Substring(0,3))
++    if($drive.DriveType -ne 'Fixed'){throw 'Runtime must be on a local fixed drive.'}
++    $cursor=$runtime.Substring(0,3)
++    foreach($part in $runtime.Substring(3).Split('\')) {
++        $cursor=Join-Path $cursor $part
++        if((Get-Item -LiteralPath $cursor -Force).Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Reparse runtime paths rejected.'}
++    }
++    if([IO.Path]::GetFileName($runtime) -ine 'pwsh.exe'){throw 'Runtime must be pwsh.exe.'}
++    $signature=Get-AuthenticodeSignature -LiteralPath $runtime
++    if($signature.Status -ne 'Valid' -or -not $signature.SignerCertificate -or $signature.SignerCertificate.GetNameInfo([Security.Cryptography.X509Certificates.X509NameType]::SimpleName,$false) -cne 'Microsoft Corporation' -or $signature.SignerCertificate.Subject -notmatch '(?:^|,\s*)O=Microsoft Corporation(?:,|$)'){throw 'Microsoft runtime publisher could not be verified.'}
++    $version=[Diagnostics.FileVersionInfo]::GetVersionInfo($runtime)
++    if($version.FileMajorPart -lt 7 -or $version.OriginalFilename -ine 'pwsh.exe'){throw 'PowerShell 7 or later is required.'}
++    # Hold the checked executable against write/delete during launch.
++    $held=[IO.File]::Open($runtime,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
++    $childArgs=@('-NoProfile','-File',(Join-Path $PSScriptRoot $Script),'-ExpectedDevice',$ExpectedDevice)
++    if($ValidateOnly){$childArgs+='-ValidateOnly'}
++    if($Script -eq 'SimCleaner.ps1'){$childArgs+=@('-Action',$Action)}
++    try {& $runtime @childArgs;$code=$LASTEXITCODE} finally {$held.Dispose()}
++    exit $code
++} catch {Write-Error ('Launcher refused: '+$_.Exception.Message) -ErrorAction Continue;exit 1}
+--- a/Run-Gigabyte.cmd
++++ b/Run-Gigabyte.cmd
+@@ -1,13 +1,6 @@
+ @echo off
+-set "inspection_pwsh=%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\native\powershell\pwsh.exe"
+-if exist "%inspection_pwsh%" goto run
+-where pwsh.exe >nul 2>nul
+-if errorlevel 1 (
+-  echo PowerShell 7 is required. See README.txt for Microsoft's installation page.
+-  pause
+-  exit /b 1
+-)
+-set "inspection_pwsh=pwsh.exe"
+-:run
+-"%inspection_pwsh%" -NoProfile -File "%~dp0Inspect-Windows.ps1" -ExpectedDevice Gigabyte
++setlocal
++"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -File "%~dp0Launch-SimCleaner.ps1" -Script Inspect-Windows.ps1 -ExpectedDevice Gigabyte %*
++set "inspection_exit=%errorlevel%"
+ pause
++exit /b %inspection_exit%
+--- a/Run-Victus.cmd
++++ b/Run-Victus.cmd
+@@ -1,13 +1,6 @@
+ @echo off
+-set "inspection_pwsh=%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\native\powershell\pwsh.exe"
+-if exist "%inspection_pwsh%" goto run
+-where pwsh.exe >nul 2>nul
+-if errorlevel 1 (
+-  echo PowerShell 7 is required. See README.txt for Microsoft's installation page.
+-  pause
+-  exit /b 1
+-)
+-set "inspection_pwsh=pwsh.exe"
+-:run
+-"%inspection_pwsh%" -NoProfile -File "%~dp0Inspect-Windows.ps1" -ExpectedDevice Victus
++setlocal
++"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -File "%~dp0Launch-SimCleaner.ps1" -Script Inspect-Windows.ps1 -ExpectedDevice Victus %*
++set "inspection_exit=%errorlevel%"
+ pause
++exit /b %inspection_exit%
+--- a/SimCleaner.ps1
++++ b/SimCleaner.ps1
+@@ -2,96 +2,218 @@
+ [CmdletBinding()]
+ param(
+     [ValidateSet('Victus','Gigabyte')][string]$ExpectedDevice='Victus',
+-    [ValidateSet('Menu','Inspect','Status','FullScan','QuickScan','UpdateSignatures','CleanupPlan','Remediate','OfflineScan')][string]$Action='Menu',
++    [ValidateSet('Menu','Inspect','Status','FullScan','QuickScan','UpdateSignatures','CleanupPlan','Remediate','OfflineScan','RecheckScan')][string]$Action='Menu',
+     [switch]$AcknowledgeImpact,
+-    [switch]$ValidateOnly
++    [string]$ReviewedPlanToken='',
++    [switch]$ValidateOnly,
++    [string]$ScanRunDirectory=''
+ )
+ $ErrorActionPreference='Stop'
+-$simComputer=Get-CimInstance Win32_ComputerSystem
+-$simMatch=if($ExpectedDevice -eq 'Gigabyte'){$simComputer.Manufacturer -match 'GIGABYTE' -and $simComputer.Model -match 'G6\s+KF'}else{$simComputer.Manufacturer -match 'HP|Hewlett' -and $simComputer.Model -match 'Victus'}
+-if(-not $simMatch){throw "TARGET MISMATCH: expected $ExpectedDevice; found $($simComputer.Manufacturer) / $($simComputer.Model). No action performed."}
+-if($ValidateOnly){Write-Host "Sim Cleaner target verified: $ExpectedDevice"; return}
++. (Join-Path $PSScriptRoot 'Safety.ps1')
++$simSourceRoot=$PSScriptRoot
++$simComputer=Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
++if (-not (Test-SimTarget $simComputer $ExpectedDevice)) { throw 'TARGET MISMATCH or unknown hardware; no action performed.' }
++if ($ValidateOnly) { Write-Host "Sim Cleaner target verified: $ExpectedDevice"; return }
+ $simPrincipal=[Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
+ $simAdmin=$simPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+ $simReports=Join-Path $PSScriptRoot 'SimCleanerReports'
+-New-Item -ItemType Directory -Path $simReports -Force | Out-Null
+ 
+-function Read-SimSection([scriptblock]$Query){
+-    try { [ordered]@{Status='Retrieved';Data=@(& $Query)} }
+-    catch { [ordered]@{Status='Unavailable';Error=$_.Exception.Message} }
+-}
+-function Get-SimState {
++function Convert-SimEvent($Event) {
++    [xml]$xml=$Event.ToXml();$fields=@{}
++    foreach($data in $xml.Event.EventData.Data) { $fields[[string]$data.Name]=[string]$data.'#text' }
++    [pscustomobject]@{Id=[int]$Event.Id;RecordId=[long]$Event.RecordId;TimeCreated=$Event.TimeCreated;ScanId=$fields['Scan ID'];ScanParameters=$fields['Scan Parameters'];ScanType=$fields['Scan Type']}
++}
++function Get-SimEvents {
++    Read-SimSection {
++        try {
++            Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-Windows Defender/Operational';Id=1000,1001,1002,1006,1007,1008,1116,1117,1118,1119,2030,2031,2050;StartTime=(Get-Date).AddDays(-7)} -MaxEvents 4096 -ErrorAction Stop | ForEach-Object { Convert-SimEvent $_ }
++        } catch {
++            if($_.FullyQualifiedErrorId -notlike 'NoMatchingEventsFound*'){throw}
++            $log=@(Get-WinEvent -ListLog 'Microsoft-Windows-Windows Defender/Operational' -ErrorAction Stop)
++            if($log.Count -ne 1 -or $log[0].IsEnabled -ne $true){throw 'Empty Defender history could not be confirmed in a readable enabled log.'}
++            # Known no matches differs from unreadable/disabled logs; emit no records.
++        }
++    }
++}
++function Get-SimState([switch]$PreflightOnly) {
+     [ordered]@{
+         CapturedAt=(Get-Date).ToString('o')
+-        Defender=Read-SimSection {Get-MpComputerStatus | Select-Object AMServiceEnabled,AMRunningMode,AntivirusEnabled,RealTimeProtectionEnabled,IsTamperProtected,AntivirusSignatureVersion,AntivirusSignatureLastUpdated,FullScanStartTime,FullScanEndTime,FullScanAge,QuickScanStartTime,QuickScanEndTime,RebootRequired}
+-        Preferences=Read-SimSection {Get-MpPreference | Select-Object ExclusionPath,ExclusionExtension,ExclusionProcess,DisableArchiveScanning,DisableRemovableDriveScanning,DisableScanningMappedNetworkDrivesForFullScan,DisableScanningNetworkFiles,SubmitSamplesConsent,MAPSReporting}
+-        Threats=Read-SimSection {Get-MpThreat | Select-Object ThreatID,ThreatName,SeverityID,IsActive,DidThreatExecute,Resources}
+-        Detections=Read-SimSection {Get-MpThreatDetection | Select-Object ThreatID,DetectionID,InitialDetectionTime,LastThreatStatusChangeTime,ActionSuccess,ThreatStatusID,Resources}
+-        Events=Read-SimSection {Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-Windows Defender/Operational';Id=1000,1001,1002,1116,1117;StartTime=(Get-Date).AddDays(-7)} -MaxEvents 100 | Select-Object TimeCreated,Id,Message}
+-    }
+-}
+-function Save-SimReport($Record,[string]$Path){
+-    $Record | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $Path -Encoding utf8
+-}
+-function Invoke-SimAction([string]$Selected,[bool]$Accepted){
+-    if($Selected -eq 'Inspect'){
+-        & (Join-Path $PSScriptRoot 'Inspect-Windows.ps1') -ExpectedDevice $ExpectedDevice
+-        return
+-    }
+-    $runFile=Join-Path $simReports ($ExpectedDevice+'-'+(Get-Date -Format 'yyyyMMdd-HHmmss-ffff')+'-'+$Selected+'.json')
+-    $record=[ordered]@{Tool='Sim Cleaner';Version='0.1.0';Device=$ExpectedDevice;Manufacturer=$simComputer.Manufacturer;Model=$simComputer.Model;Elevated=$simAdmin;Action=$Selected;StartedAt=(Get-Date).ToString('o');Result='Prepared';Before=Get-SimState;After=$null;Error=$null;Limits=@('Uses Microsoft Defender, not a separate malware detection engine.','Defender applies its existing exclusions and remediation/cloud-submission policies. No policies are changed.','A negative scan cannot prove absence of malware. Reports can contain local paths and detection details; keep them local.')}
+-    Save-SimReport $record $runFile
++        Defender=Read-SimSection -Singleton -Required AMServiceEnabled,AMRunningMode,AntivirusEnabled,RealTimeProtectionEnabled {
++            $status=Get-MpComputerStatus -ErrorAction Stop
++            foreach($field in @('FullScanStartTime','FullScanEndTime','QuickScanStartTime','QuickScanEndTime')){if($status.PSObject.Properties.Name -notcontains $field){throw "Scan history field unavailable: $field"}}
++            $status | Select-Object AMServiceEnabled,AMRunningMode,AntivirusEnabled,RealTimeProtectionEnabled,IsTamperProtected,AntivirusSignatureVersion,AntivirusSignatureLastUpdated,FullScanStartTime,FullScanEndTime,FullScanAge,QuickScanStartTime,QuickScanEndTime,RebootRequired
++        }
++        Preferences=Read-SimSection -Singleton -Required SubmitSamplesConsent,MAPSReporting,DisableArchiveScanning,DisableRemovableDriveScanning,DisableScanningMappedNetworkDrivesForFullScan,DisableScanningNetworkFiles {
++            $p=Get-MpPreference -ErrorAction Stop
++            foreach($field in @('ExclusionPath','ExclusionExtension','ExclusionProcess')) {
++                if($p.PSObject.Properties.Name -notcontains $field -or [string]$p.$field -match 'N/A:|Must be an administrator'){throw "Visible exclusions unavailable: $field"}
++            }
++            $p | Select-Object ExclusionPath,ExclusionExtension,ExclusionProcess,DisableArchiveScanning,DisableRemovableDriveScanning,DisableScanningMappedNetworkDrivesForFullScan,DisableScanningNetworkFiles,SubmitSamplesConsent,MAPSReporting,ThreatIDDefaultAction_Ids,ThreatIDDefaultAction_Actions,LowThreatDefaultAction,ModerateThreatDefaultAction,HighThreatDefaultAction,SevereThreatDefaultAction,DisableAutoExclusions
++        }
++        Threats=Read-SimSection -Required ThreatID,IsActive { Get-MpThreat -ErrorAction Stop | Select-Object ThreatID,ThreatName,SeverityID,IsActive,DidThreatExecute,Resources }
++        Detections=if($PreflightOnly){[ordered]@{Status='NotCollected';Data=@();Reason='Pre-dispatch snapshot skips redundant detection-history enumeration'}}else{Read-SimSection { Get-MpThreatDetection -ErrorAction Stop | Select-Object ThreatID,DetectionID,InitialDetectionTime,LastThreatStatusChangeTime,ActionSuccess,ThreatStatusID,Resources }}
++        Events=Get-SimEvents
++    }
++}
++function Assert-SimReady($State) {
++    if ($State.Defender.Status -ne 'Retrieved') { throw 'Defender state is unavailable or malformed.' }
++    $d=$State.Defender.Data[0]
++    if ($d.AntivirusEnabled -isnot [bool] -or $d.AMServiceEnabled -isnot [bool] -or -not $d.AntivirusEnabled -or -not $d.AMServiceEnabled -or $d.AMRunningMode -ne 'Normal') { throw 'Defender is disabled, passive, or unknown; no mutation allowed.' }
++    if ($State.Preferences.Status -ne 'Retrieved') { throw 'Coverage/cloud/remediation policy unavailable; visible preferences required.' }
++    $p=$State.Preferences.Data[0]
++    foreach($field in @('DisableArchiveScanning','DisableRemovableDriveScanning','DisableScanningMappedNetworkDrivesForFullScan','DisableScanningNetworkFiles')){if($p.$field -isnot [bool]){throw 'Coverage policy fields are malformed.'}}
++    if($p.SubmitSamplesConsent -notin @(0,1,2,3) -or $p.MAPSReporting -notin @(0,1,2)){throw 'Cloud policy values unsupported.'}
++}
++function Get-SimPlanToken($State) {
++    Assert-SimReady $State
++    if ($State.Threats.Status -notin @('Retrieved','Empty')) { throw 'Readable threat inventory is required.' }
++    foreach($t in $State.Threats.Data) { if ($t.IsActive -isnot [bool] -or $null -eq $t.ThreatID) { throw 'Malformed threat inventory.' } }
++    $active=@($State.Threats.Data | Where-Object {$_.IsActive -eq $true} | Sort-Object ThreatID | ForEach-Object {
++        [ordered]@{ThreatID=$_.ThreatID;ThreatName=$_.ThreatName;Resources=@($_.Resources | Sort-Object);DidThreatExecute=$_.DidThreatExecute;SeverityID=$_.SeverityID}
++    })
++    Get-SimHash ([ordered]@{Device=$ExpectedDevice;Manufacturer=$simComputer.Manufacturer;Model=$simComputer.Model;Threats=$active;Policy=$State.Preferences.Data[0]})
++}
++function Show-SimPolicy($State) {
++    Write-Host 'Existing Defender policy can quarantine/delete and send samples/data to Microsoft. No policies are changed.'
++    Write-Host 'FullScan honors exclusions; removable/network drives, archives, encrypted content and automatic exclusions can limit coverage.'
++    Write-Host 'Visible exclusions can omit managed/automatic exclusions; this is not proof of effective scope.'
++    ConvertTo-SimSafeData $State.Preferences | ConvertTo-Json -Depth 8 | Out-Host
++}
++function Assert-SimScanIdle($State) {
++    if($State.Events.Status -notin @('Retrieved','Empty') -or @($State.Events.Data).Count -ge 4096){throw 'Scan lifecycle evidence unavailable/truncated; scan dispatch blocked.'}
++    foreach($start in @($State.Events.Data | Where-Object {$_.Id -eq 1000})){
++        if(-not $start.ScanId -or -not @($State.Events.Data | Where-Object {$_.ScanId -ceq $start.ScanId -and $_.RecordId -gt $start.RecordId -and $_.Id -in @(1001,1002)}).Count){throw 'Existing/unresolved scan start observed; cannot establish idle state.'}
++    }
++}
++function Get-SimScanOutcome($Before,$After,[string]$Selected,[datetime]$RequestedAt) {
++    $unknown=[ordered]@{Status='Unverified';Reason='Complete matching scan evidence unavailable';ScanId=$null}
++    if ($Before.Events.Status -notin @('Retrieved','Empty') -or $After.Events.Status -ne 'Retrieved' -or @($Before.Events.Data).Count -ge 4096 -or @($After.Events.Data).Count -ge 4096 -or $After.Defender.Status -ne 'Retrieved') { return $unknown }
++    $watermark=($Before.Events.Data | Measure-Object RecordId -Maximum).Maximum
++    if ($null -eq $watermark) { if($Before.Events.Status -eq 'Empty'){$watermark=0}else{return $unknown} }
++    $new=@($After.Events.Data | Where-Object {$_.RecordId -gt $watermark -and $_.TimeCreated -ge $RequestedAt.AddSeconds(-2)})
++    $starts=@($new | Where-Object {$_.Id -eq 1000})
++    if ($starts.Count -ne 1 -or -not $starts[0].ScanId) { $unknown.Reason='No unique new scan start; unrelated/concurrent scans cannot be attributed'; return $unknown }
++    $start=$starts[0];$expected=if($Selected -eq 'FullScan'){'Full scan'}else{'Quick scan'}
++    if ($start.ScanParameters -ine $expected -or $start.ScanType -ine 'Antimalware') { $unknown.Reason='Unsupported/different scan type or localized parameters; isolated validation required'; return $unknown }
++    $matched=@($new | Where-Object {$_.ScanId -ceq $start.ScanId -and $_.RecordId -gt $start.RecordId -and $_.TimeCreated -ge $start.TimeCreated})
++    $unknown.ScanId=$start.ScanId
++    if (@($matched | Where-Object {$_.Id -eq 1002}).Count) { return [ordered]@{Status='Cancelled';Reason='Matching cancellation event';ScanId=$start.ScanId} }
++    $ends=@($matched | Where-Object {$_.Id -eq 1001 -and $_.ScanParameters -ieq $expected -and $_.ScanType -ieq $start.ScanType})
++    if ($ends.Count -ne 1) { $unknown.Reason='Matching start observed; no unique matching terminal completion. Scan may still run or evidence may be missing'; return $unknown }
++    $prefix=if($Selected -eq 'FullScan'){'FullScan'}else{'QuickScan'}
++    $a=$After.Defender.Data[0];$b=$Before.Defender.Data[0]
++    $hs=$a.($prefix+'StartTime');$he=$a.($prefix+'EndTime');$old=$b.($prefix+'EndTime')
++    if ($Before.Defender.Status -ne 'Retrieved' -or ($null -ne $old -and ($old -isnot [datetime] -or $he -le $old)) -or $hs -isnot [datetime] -or $he -isnot [datetime] -or $hs -lt $RequestedAt.AddSeconds(-2) -or $he -lt $hs -or [math]::Abs(($hs-$start.TimeCreated).TotalSeconds) -gt 5 -or [math]::Abs(($he-$ends[0].TimeCreated).TotalSeconds) -gt 5) { $unknown.Reason='History does not match the same scan window'; return $unknown }
++    return [ordered]@{Status='CompletedWithCorrelatedEvidence';Reason='Unique new start/completion ID, type and matching advanced history; coverage/detection efficacy not established';ScanId=$start.ScanId;RequestOwnership='Inferred from request window; API supplies no request-bound scan ID and independent Windows activity cannot be fully excluded'}
++}
++function Read-SimScanIntent([string]$Directory) {
++    $directory=Assert-SimLocalPath $Directory
++    $path=Assert-SimLocalPath (Join-Path $directory '02-intent.json') -Leaf
++    $held=[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+     try {
+-        if($Selected -in @('Status','CleanupPlan')){
+-            $record.Before.Defender.Data | Format-List | Out-Host
+-            $record.Before.Threats.Data | Format-List | Out-Host
+-            if($Selected -eq 'CleanupPlan'){
+-                if($record.Before.Threats.Status -ne 'Retrieved'){throw 'Threat inventory unavailable. No cleanup plan can be inferred.'}
+-                $active=@($record.Before.Threats.Data | Where-Object IsActive)
+-                Write-Host ("Active Defender threats: {0}. Remediate invokes Defender against ALL active threats under its configured policy. Review listed resources, especially project/build paths. No arbitrary file deletion or registry cleaning is offered." -f $active.Count)
+-            }
+-            $record.Result='Read-only review completed'
++        if($held.Length -gt 16MB){throw 'Scan intent exceeds input size limit.'}
++        $intent=Get-Content -LiteralPath $path -Raw -ErrorAction Stop | ConvertFrom-Json -AsHashtable -ErrorAction Stop
++        $fingerprint=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
++    } finally {$held.Dispose()}
++    if($intent.Tool -cne 'Sim Cleaner' -or $intent.Version -cne '0.2.0' -or $intent.Device -cne $ExpectedDevice -or $intent.Action -notin @('FullScan','QuickScan') -or -not $intent.PreDispatch -or -not $intent.DispatchAt){throw 'Invalid/different-device scan intent; no correlation possible.'}
++    $request=[datetime]::Parse($intent.DispatchAt,[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::RoundtripKind)
++    foreach($e in $intent.PreDispatch.Events.Data){$e.TimeCreated=[datetime]::Parse([string]$e.TimeCreated,[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::RoundtripKind)}
++    foreach($d in $intent.PreDispatch.Defender.Data){foreach($field in @('FullScanStartTime','FullScanEndTime','QuickScanStartTime','QuickScanEndTime')){if(-not $d.Contains($field)){throw 'Scan intent has incomplete history schema.'};if($null -ne $d[$field]){$d[$field]=[datetime]::Parse([string]$d[$field],[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::RoundtripKind)}}}
++    [ordered]@{Path=$path;Fingerprint=$fingerprint;Intent=$intent;RequestedAt=$request;Trust='Locally mutable evidence; fingerprint is not authenticity'}
++}
++function Invoke-SimInspection {
++    $runtime=(Get-Process -Id $PID).Path
++    & $runtime -NoProfile -File (Join-Path $simSourceRoot 'Inspect-Windows.ps1') -ExpectedDevice $ExpectedDevice
++    if ($LASTEXITCODE -ne 0) { throw "Inspection child failed or partial (exit $LASTEXITCODE)." }
++}
++function Invoke-SimAction([string]$Selected,[bool]$Accepted,[string]$PlanToken='', [bool]$Interactive=$false,[string]$RecheckDirectory=$ScanRunDirectory) {
++    if ($Selected -eq 'Inspect') { Invoke-SimInspection; return }
++    if ($Selected -eq 'OfflineScan') { throw 'OfflineScan blocked in this prototype: isolated WinRE/BitLocker/reboot readiness and durable post-boot evidence unvalidated.' }
++    $lock=Enter-SimLock;$record=$null;$failure=$null;$runDirectory=$null
++    try {
++        [void](Assert-SimLocalPath $simReports)
++        $runDirectory=Join-Path $simReports ($ExpectedDevice+'-'+[guid]::NewGuid().ToString('N'))
++        New-Item -ItemType Directory -Path $runDirectory -ErrorAction Stop | Out-Null
++        $record=[ordered]@{Tool='Sim Cleaner';Version='0.2.0';RunId=Split-Path $runDirectory -Leaf;Device=$ExpectedDevice;Manufacturer=$simComputer.Manufacturer;Model=$simComputer.Model;Elevated=$simAdmin;Action=$Selected;StartedAt=(Get-Date).ToString('o');DispatchAt=$null;Result='Prepared';Before=Get-SimState;PreDispatch=$null;After=$null;ScanEvidence=$null;Error=$null;EvidenceError=$null;Limits=@('Microsoft Defender orchestration; no separate antivirus engine.','Existing exclusions/remediation/cloud/sample policy apply.','No negative result proves malware absent. Reports contain paths/detection details.','Atomic unique local phase files are not signed/tamper-proof evidence.','Lock coordinates this tool only; Windows/scheduled scans/other clients remain independent.')}
++        Save-SimReport $record (Join-Path $runDirectory '01-before.json')
++        if($Selected -eq 'RecheckScan') {
++            if($Interactive){$RecheckDirectory=Read-Host 'Absolute local original scan run directory'}
++            $source=Read-SimScanIntent $RecheckDirectory
++            $record.SourceIntent=[ordered]@{Path=$source.Path;SHA256=$source.Fingerprint;OriginalRunId=$source.Intent.RunId;Trust=$source.Trust}
++            $record.ScanEvidence=Get-SimScanOutcome $source.Intent.PreDispatch $record.Before $source.Intent.Action $source.RequestedAt
++            $record.Result=$record.ScanEvidence.Status
++            if($record.Result -ne 'CompletedWithCorrelatedEvidence'){throw ('Scan recheck: '+$record.Result+'; '+$record.ScanEvidence.Reason)}
++        } elseif ($Selected -in @('Status','CleanupPlan')) {
++            ConvertTo-SimSafeData $record.Before | ConvertTo-Json -Depth 12 | Out-Host
++            if ($Selected -eq 'CleanupPlan') {
++                $record.PlanToken=Get-SimPlanToken $record.Before
++                Write-Host ('Review token: '+$record.PlanToken)
++                Write-Host 'Remove-MpThreat acts on ALL active threats at execution time, including newly arriving threats. No per-file cleanup scope.'
++            }
++            $record.Result=if($record.Before.Defender.Status -eq 'Retrieved' -and $record.Before.Preferences.Status -eq 'Retrieved' -and $record.Before.Threats.Status -in @('Retrieved','Empty') -and $record.Before.Events.Status -in @('Retrieved','Empty') -and $record.Before.Detections.Status -in @('Retrieved','Empty')){'ReadOnlySnapshot'}else{'PartialReadOnlySnapshot'}
+         } else {
+-            if(-not $simAdmin){throw 'Administrator rights required for this action. Save work, close this tool and manually run its launcher as administrator. No UAC automation or policy bypass is performed.'}
+-            if($record.Before.Defender.Status -ne 'Retrieved' -or -not $record.Before.Defender.Data[0].AntivirusEnabled){throw 'Defender antivirus state is unavailable or disabled. This tool will not override another security product or enable/disable security controls.'}
+-            if($Selected -ne 'UpdateSignatures' -and -not $Accepted){throw 'Action was not acknowledged. Scans can quarantine files; remediation can remove active threats; OfflineScan reboots. Use the menu to review and accept the specific impact.'}
+-            $record.Result='Action requested; completion not yet verified'
+-            Save-SimReport $record $runFile
+-            switch($Selected){
+-                'UpdateSignatures' {Update-MpSignature; $record.Result='Signature update command returned; inspect After state'}
+-                'FullScan' {Write-Host 'Running Defender full scan. Keep this console open; large drives can take hours.'; Start-MpScan -ScanType FullScan; $record.Result='Full scan command returned; completion requires updated FullScanEndTime and matching Defender events'}
+-                'QuickScan' {Start-MpScan -ScanType QuickScan; $record.Result='Quick scan command returned; inspect scan history/events for completion'}
+-                'Remediate' {
+-                    if($record.Before.Threats.Status -ne 'Retrieved'){throw 'Cannot remediate without readable threat inventory.'}
+-                    if(@($record.Before.Threats.Data | Where-Object IsActive).Count -eq 0){$record.Result='No active Defender threats reported; no remediation invoked'}else{Remove-MpThreat; $record.Result='Defender remediation command returned; inspect remaining active threats and action events'}
++            if (-not $simAdmin) { throw 'Administrator rights required; no automatic elevation.' }
++            Assert-SimReady $record.Before;Show-SimPolicy $record.Before
++            if ($Interactive) {
++                $phrase=$Selected
++                if ($Selected -eq 'Remediate') {
++                    $PlanToken=Get-SimPlanToken $record.Before;$record.Before.Threats.Data | Format-List | Out-Host
++                    Write-Host 'ALL active threats at execution, including new threats, may be quarantined/deleted. No atomic snapshot-scoped Remove-MpThreat API.'
++                    $phrase='Remediate ALL '+$PlanToken
+                 }
+-                'OfflineScan' {Write-Host 'Requesting Defender Offline. Windows may restart immediately.'; Start-MpWDOScan; $record.Result='Offline scan requested; inspect Defender events after reboot. Completion not established.'}
+-            }
+-            $record.After=Get-SimState
+-            if($Selected -eq 'FullScan' -and $record.After.Defender.Status -eq 'Retrieved'){
+-                $end=$record.After.Defender.Data[0].FullScanEndTime
+-                $oldEnd=$record.Before.Defender.Data[0].FullScanEndTime
+-                $record.FullScanHistoryAdvanced=($null -ne $end -and $end -gt $oldEnd -and $end -ge ([datetime]$record.StartedAt).AddSeconds(-2))
+-                if(-not $record.FullScanHistoryAdvanced){$record.Result='Full scan requested; completion not verified in retrieved history'}
+-            }
+-        }
+-    } catch {$record.Result='Failed or incomplete'; $record.Error=$_.Exception.Message; Write-Warning $record.Error}
+-    finally {$record.FinishedAt=(Get-Date).ToString('o'); Save-SimReport $record $runFile; Write-Host "Report: $runFile"; Write-Host $record.Result}
+-    if($record.Error){throw $record.Error}
+-}
+-function Confirm-SimImpact([string]$Selected){
+-    if($Selected -in @('FullScan','QuickScan')){Write-Host 'Defender scans can automatically quarantine/remediate under existing Windows policy. Back up important project work first. Existing cloud/sample-submission policy applies.'}
+-    elseif($Selected -eq 'Remediate'){Invoke-SimAction 'CleanupPlan' $false; Write-Host 'This applies configured Defender remediation to ALL active threats. It can quarantine/delete detected files; review the plan above first.'}
+-    elseif($Selected -eq 'OfflineScan'){Write-Host 'Defender Offline can restart Windows immediately and automatically remediate malware. Save all work. Confirm that your encryption recovery information is available to YOU; never paste it here.'}
+-    else {return $true}
+-    return ((Read-Host "Type $Selected to authorize this action, or press Enter to cancel") -ceq $Selected)
+-}
+-if($Action -ne 'Menu'){Invoke-SimAction $Action $AcknowledgeImpact.IsPresent; return}
+-Write-Host "SIM CLEANER 0.1.0 - $ExpectedDevice - administrator: $simAdmin"
+-Write-Host 'A diagnostic and Defender orchestration tool. No security-engine or completeness claims.'
++                $Accepted=((Read-Host "Type $phrase to authorize, or Enter to cancel") -ceq $phrase)
++            }
++            if (-not $Accepted) { throw 'Action not acknowledged or cancelled; no mutation invoked.' }
++            $record.PreDispatch=Get-SimState -PreflightOnly;Assert-SimReady $record.PreDispatch
++            if($Selected -in @('FullScan','QuickScan')){Assert-SimScanIdle $record.PreDispatch}
++            if ((Get-SimHash $record.Before.Preferences.Data) -cne (Get-SimHash $record.PreDispatch.Preferences.Data)) { throw 'Defender policy changed during review; review a fresh snapshot.' }
++            if ($Selected -eq 'Remediate') {
++                $fresh=Get-SimPlanToken $record.PreDispatch
++                if (-not $PlanToken -or $PlanToken -cne (Get-SimPlanToken $record.Before) -or $PlanToken -cne $fresh) { throw 'Cleanup token missing/stale; active threats or policy changed. Review a new CleanupPlan.' }
++                $record.PlanToken=$fresh
++            }
++            $record.DispatchAt=(Get-Date).ToString('o');$record.Result='DispatchIntentPersisted'
++            Save-SimReport $record (Join-Path $runDirectory '02-intent.json')
++            $commandError=$null;$afterError=$null
++            try {
++                switch($Selected) {
++                    'FullScan' { Start-MpScan -ScanType FullScan -ErrorAction Stop }
++                    'QuickScan' { Start-MpScan -ScanType QuickScan -ErrorAction Stop }
++                    'UpdateSignatures' { Update-MpSignature -ErrorAction Stop }
++                    'Remediate' { if(@($record.PreDispatch.Threats.Data | Where-Object {$_.IsActive -eq $true}).Count) { Remove-MpThreat -ErrorAction Stop } }
++                    default { throw 'Unsupported action.' }
++                }
++                $record.Result='CommandReturnedOutcomeUnverified'
++            } catch {$commandError=Protect-SimText $_.Exception.Message}
++            finally {try{$record.After=Get-SimState}catch{$afterError=Protect-SimText $_.Exception.Message;$record.After=[ordered]@{Status='Unavailable';Error=$afterError}}}
++            if($commandError){throw ($commandError+$(if($afterError){'; After evidence failed: '+$afterError}))}
++            if($afterError){throw ('After evidence failed: '+$afterError)}
++            if ($Selected -in @('FullScan','QuickScan')) {
++                $record.ScanEvidence=Get-SimScanOutcome $record.PreDispatch $record.After $Selected ([datetime]$record.DispatchAt);$record.Result=$record.ScanEvidence.Status
++                if ($record.ScanEvidence.Status -ne 'CompletedWithCorrelatedEvidence') { throw ('Scan outcome: '+$record.ScanEvidence.Status+'; '+$record.ScanEvidence.Reason) }
++            } elseif ($Selected -eq 'Remediate') {
++                if($record.After.Threats.Status -notin @('Retrieved','Empty')){throw 'After threat inventory unavailable; remediation outcome unverified.'}
++                foreach($t in $record.After.Threats.Data){if($t.IsActive -isnot [bool] -or $null -eq $t.ThreatID){throw 'After threat inventory malformed.'}}
++                if(@($record.After.Threats.Data | Where-Object {$_.IsActive -eq $true}).Count){throw 'Active threats remain; remediation outcome incomplete.'}
++                $record.Result='RemediationCommandReturned; remaining active threats: '+@($record.After.Threats.Data | Where-Object {$_.IsActive -eq $true}).Count+'; removal efficacy unverified'
++            }
++        }
++    } catch {$failure=Protect-SimText $_.Exception.Message;if($record){$record.Error=$failure;if($record.Result -notin @('Cancelled','Unverified')){$record.Result='FailedOrIncomplete'}}}
++    finally {
++        try {
++            if($record){$record.FinishedAt=(Get-Date).ToString('o');try {Save-SimReport $record (Join-Path $runDirectory '03-final.json')}catch{$record.EvidenceError=$_.Exception.Message;$failure=($failure+' Final evidence persistence failed: '+$record.EvidenceError).Trim()};Write-Host "Evidence: $runDirectory";Write-Host $record.Result}
++        } finally {Exit-SimLock $lock}
++    }
++    if($failure){throw $failure};return $record
++}
++if ($Action -ne 'Menu') { $result=Invoke-SimAction $Action $AcknowledgeImpact.IsPresent $ReviewedPlanToken $false $ScanRunDirectory; if($result -and $result.Result -eq 'PartialReadOnlySnapshot'){exit 3}; return }
++Write-Host "SIM CLEANER 0.2.0 - $ExpectedDevice - administrator: $simAdmin"
++Write-Host 'Local prototype; lifecycle and detection efficacy require isolated acceptance.'
++$sessionFailed=$false
+ do {
+-    Write-Host "`n1 Inspect Windows/network`n2 Defender status/detections`n3 Update signatures`n4 Full malware scan`n5 Quick scan`n6 Review cleanup plan`n7 Remediate active Defender threats`n8 Defender Offline (reboots)`n0 Exit"
++    Write-Host "`n1 Inspect Windows/network (no optional tools by default)`n2 Defender status`n3 Update signatures`n4 Full scan`n5 Quick scan`n6 Cleanup plan`n7 Remediate ALL active threats`n8 OfflineScan (blocked prototype feature)`n9 Recheck original scan evidence (read-only)`n0 Exit"
+     $choice=Read-Host 'Choose'
+-    $selected=switch($choice){'1'{'Inspect'}'2'{'Status'}'3'{'UpdateSignatures'}'4'{'FullScan'}'5'{'QuickScan'}'6'{'CleanupPlan'}'7'{'Remediate'}'8'{'OfflineScan'}default{$null}}
+-    if($selected){try {if(Confirm-SimImpact $selected){Invoke-SimAction $selected $true}else{Write-Host 'Cancelled; no action performed.'}}catch{Write-Warning $_.Exception.Message}}
++    $selected=switch($choice){'1'{'Inspect'}'2'{'Status'}'3'{'UpdateSignatures'}'4'{'FullScan'}'5'{'QuickScan'}'6'{'CleanupPlan'}'7'{'Remediate'}'8'{'OfflineScan'}'9'{'RecheckScan'}default{$null}}
++    if($selected){try {$result=Invoke-SimAction $selected $false '' $true;if($result -and $result.Result -eq 'PartialReadOnlySnapshot'){$sessionFailed=$true}}catch{$sessionFailed=$true;Write-Warning $_.Exception.Message}}
+ }while($choice -ne '0')
++if($sessionFailed){exit 3}
+--- a/Start-SimCleaner-Gigabyte.cmd
++++ b/Start-SimCleaner-Gigabyte.cmd
+@@ -1,13 +1,6 @@
+ @echo off
+-set "inspection_pwsh=%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\native\powershell\pwsh.exe"
+-if exist "%inspection_pwsh%" goto run
+-where pwsh.exe >nul 2>nul
+-if errorlevel 1 (
+-  echo PowerShell 7 is required. See README.txt.
+-  pause
+-  exit /b 1
+-)
+-set "inspection_pwsh=pwsh.exe"
+-:run
+-"%inspection_pwsh%" -NoProfile -File "%~dp0SimCleaner.ps1" -ExpectedDevice Gigabyte
++setlocal
++"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -File "%~dp0Launch-SimCleaner.ps1" -Script SimCleaner.ps1 -ExpectedDevice Gigabyte %*
++set "inspection_exit=%errorlevel%"
+ pause
++exit /b %inspection_exit%
+--- a/Start-SimCleaner-Victus.cmd
++++ b/Start-SimCleaner-Victus.cmd
+@@ -1,13 +1,6 @@
+ @echo off
+-set "inspection_pwsh=%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\native\powershell\pwsh.exe"
+-if exist "%inspection_pwsh%" goto run
+-where pwsh.exe >nul 2>nul
+-if errorlevel 1 (
+-  echo PowerShell 7 is required. See README.txt.
+-  pause
+-  exit /b 1
+-)
+-set "inspection_pwsh=pwsh.exe"
+-:run
+-"%inspection_pwsh%" -NoProfile -File "%~dp0SimCleaner.ps1" -ExpectedDevice Victus
++setlocal
++"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -File "%~dp0Launch-SimCleaner.ps1" -Script SimCleaner.ps1 -ExpectedDevice Victus %*
++set "inspection_exit=%errorlevel%"
+ pause
++exit /b %inspection_exit%
+--- /dev/null
++++ b/Tests/README.txt
+@@ -0,0 +1,26 @@
++RUN ONLY THE INERT HARNESS
++
++From an explicitly trusted PowerShell 7 host:
++  pwsh -NoProfile -NonInteractive -File .\Tests\Test-SimCleaner.ps1
++Use the absolute reviewed runtime path instead of bare pwsh if origin is uncertain.
++Optional: -OutputDirectory C:\absolute\local\new-test-folder
++The selected output directory must not already exist.
++
++The harness parses source, imports function definitions through AST extraction,
++and intercepts all Defender/CIM/event/tool/inspection-child calls. It never runs
++the source scripts' top-level entry code. Local report files and a named mutex
++are exercised; an inert second runspace tests lock exclusion. Four reviewed
++PowerShell subprocess fixtures print data, exit 7, exceed an output cap, or sleep
++until the wrapper's timeout kills only that child. No untrusted executable runs.
++
++historical-scan-fixture.json is a sanitized PREEXISTING quick-scan record from
++the Gigabyte. Replaying its normalized fields tests correlation/capitalization,
++not a scan invoked or completed by this package. It contains no username or paths.
++
++SourceHashes, HarnessSHA256 and HistoricalFixtureSHA256 in test-results.json
++bind reported passes to executed definitions. Static assertions are identified
++as such and complement mocked behavior; they do not prove Windows integration.
++
++Additional acceptance tests require a separately authorized disposable Windows
++environment. Never introduce EICAR, malware, quarantines, scans or reboot tests
++into Rick's project laptop to turn mocks into a release claim.
+--- a/Tests/Test-SimCleaner.ps1
++++ b/Tests/Test-SimCleaner.ps1
+@@ -1,54 +1,279 @@
+-# Tests real dispatch/report functions with mocked Defender commands. No scan,
+-# reboot, quarantine, signature update or Windows setting mutation is performed.
++#requires -Version 7.0
++[CmdletBinding()]
++param([string]$OutputDirectory=(Join-Path $PSScriptRoot ('Results-'+[guid]::NewGuid().ToString('N'))))
++# AST definitions only: never execute SimCleaner/Inspect/launcher top-level code.
++# All Defender, CIM, events, optional tools and inspection child dispatch are mocked.
++# Two small reviewed subprocess fixtures only print data / exit / wait for timeout.
+ $ErrorActionPreference='Stop'
+ $kitPath=Split-Path $PSScriptRoot -Parent
+-$tokens=$null; $parseErrors=$null
+-$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $kitPath 'SimCleaner.ps1'),[ref]$tokens,[ref]$parseErrors)
+-if($parseErrors.Count){throw ($parseErrors | Out-String)}
+-foreach($name in @('Save-SimReport','Invoke-SimAction')){
+-  $node=$ast.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name},$true)
+-  if(-not $node){throw "Missing function: $name"}
+-  . ([scriptblock]::Create($node.Extent.Text))
+-}
+-$simComputer=[pscustomobject]@{Manufacturer='Test fixture';Model='No live device'}
+-$ExpectedDevice='Victus'
+-$simReports=Join-Path  ('sim-cleaner-tests-'+(Get-Date -Format 'yyyyMMdd-HHmmss'))
+-New-Item -ItemType Directory -Path $simReports | Out-Null
+-function Get-SimState {
+- $script:reads++
+- $scanEnd=if($script:advance -and $script:reads -gt 1){Get-Date}else{[datetime]'2020-01-01'}
+- [ordered]@{Defender=[ordered]@{Status='Retrieved';Data=@([pscustomobject]@{AntivirusEnabled=$script:enabled;FullScanEndTime=$scanEnd})};Threats=[ordered]@{Status=$script:threatStatus;Data=@($script:threatData)};Events=[ordered]@{Status='Retrieved';Data=@()}}
+-}
+-function Start-MpScan {param($ScanType) $script:calls+= "Scan:$ScanType"; if($script:throwScan){throw 'Injected scan failure'}}
+-function Remove-MpThreat {$script:calls+='Remediate'}
+-function Start-MpWDOScan {$script:calls+='Offline'}
+-function Update-MpSignature {$script:calls+='Update'}
+-$results=@()
+-function Test-Case($Name,$Action,$Accept,$Setup,$ExpectedCalls,$ExpectedError,$ExpectedResult){
+- $script:calls=@(); $script:reads=0; $script:enabled=$true; $script:advance=$false; $script:throwScan=$false; $script:threatStatus='Retrieved'; $script:threatData=@(); $script:simAdmin=$true
+- & $Setup
+- $caught=$null
+- try {Invoke-SimAction $Action $Accept | Out-Null}catch{$caught=$_.Exception.Message}
+- $file=Get-ChildItem -LiteralPath $simReports -Filter '*.json' | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+- $record=Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json
+- if(($script:calls -join ',') -ne $ExpectedCalls){throw "$Name unexpected calls: $($script:calls -join ',')"}
+- if($ExpectedError -and $caught -notmatch $ExpectedError){throw "$Name expected error '$ExpectedError', found '$caught'"}
+- if(-not $ExpectedError -and $caught){throw "$Name unexpected error '$caught'"}
+- if($ExpectedResult -and $record.Result -notmatch $ExpectedResult){throw "$Name unexpected result '$($record.Result)'"}
+- [pscustomobject]@{Test=$Name;Passed=$true;Calls=$script:calls;Result=$record.Result}
+-}
+-$results+=Test-Case 'No elevation blocks full scan' FullScan $true {$script:simAdmin=$false} '' 'Administrator rights' 'Failed'
+-$results+=Test-Case 'No acknowledgment blocks full scan' FullScan $false {} '' 'not acknowledged' 'Failed'
+-$results+=Test-Case 'Disabled Defender blocks full scan' FullScan $true {$script:enabled=$false} '' 'disabled' 'Failed'
+-$results+=Test-Case 'FullScan calls actual documented mode' FullScan $true {$script:advance=$true} 'Scan:FullScan' '' 'completion requires'
+-$results+=Test-Case 'Stale scan history is not completion' FullScan $true {} 'Scan:FullScan' '' 'completion not verified'
+-$results+=Test-Case 'Scan error is not success' FullScan $true {$script:throwScan=$true} 'Scan:FullScan' 'Injected' 'Failed'
+-$results+=Test-Case 'No active threats means no cleanup' Remediate $true {} '' '' 'no remediation invoked'
+-$results+=Test-Case 'Unreadable threats block cleanup' Remediate $true {$script:threatStatus='Unavailable'} '' 'readable threat' 'Failed'
+-$results+=Test-Case 'Active threats invoke Defender remediation' Remediate $true {$script:threatData=@([pscustomobject]@{IsActive=$true;ThreatName='Mock threat'})} 'Remediate' '' 'command returned'
+-$results+=Test-Case 'No acknowledgment blocks offline reboot' OfflineScan $false {} '' 'not acknowledged' 'Failed'
+-$results+=Test-Case 'Authorized offline request does not claim completion' OfflineScan $true {} 'Offline' '' 'Completion not established'
+-$results+=Test-Case 'Signature update uses Defender command' UpdateSignatures $false {} 'Update' '' 'update command returned'
+-$results | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $simReports 'test-results.json') -Encoding utf8
+-$results | Format-Table Test,Passed,Result
+-
++$definitions=@{}
++foreach($file in @('Safety.ps1','SimCleaner.ps1','Inspect-Windows.ps1','Launch-SimCleaner.ps1')) {
++    $tokens=$null;$errors=$null
++    $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $kitPath $file),[ref]$tokens,[ref]$errors)
++    if($errors.Count){throw ($errors | Out-String)}
++    foreach($node in $ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true)){
++        . ([scriptblock]::Create($node.Extent.Text));$definitions[$node.Name]=$node.Extent.Text
++    }
++}
++$OutputDirectory=[IO.Path]::GetFullPath($OutputDirectory)
++New-Item -ItemType Directory -Path $OutputDirectory -ErrorAction Stop | Out-Null
++$simReports=Join-Path $OutputDirectory 'MockReports'
++$simComputer=[pscustomobject]@{Manufacturer='HP';Model='Victus fixture'};$ExpectedDevice='Victus'
++$simSourceRoot=$kitPath
++$ScanRunDirectory=''
++$script:results=[Collections.Generic.List[object]]::new()
++function Assert($Condition,[string]$Message='Assertion failed'){if(-not $Condition){throw $Message}}
++function MustThrow([scriptblock]$Body,[string]$Pattern){$errorText=$null;try{& $Body | Out-Null}catch{$errorText=$_.Exception.Message};Assert ($errorText -match $Pattern) "Expected '$Pattern'; got '$errorText'"}
++function Case([string]$Name,[scriptblock]$Body){try{& $Body;$script:results.Add([pscustomobject]@{Test=$Name;Passed=$true;Error=$null})}catch{$script:results.Add([pscustomobject]@{Test=$Name;Passed=$false;Error=$_.Exception.Message})}}
++function ReadyState {
++    [ordered]@{
++        Defender=[ordered]@{Status='Retrieved';Data=@([pscustomobject]@{AntivirusEnabled=$true;AMServiceEnabled=$true;AMRunningMode='Normal';RealTimeProtectionEnabled=$true;FullScanStartTime=$null;FullScanEndTime=$null;QuickScanStartTime=$null;QuickScanEndTime=$null})}
++        Preferences=[ordered]@{Status='Retrieved';Data=@([pscustomobject]@{ExclusionPath=$null;ExclusionExtension=$null;ExclusionProcess=$null;SubmitSamplesConsent=1;MAPSReporting=2;DisableArchiveScanning=$false;DisableRemovableDriveScanning=$true;DisableScanningMappedNetworkDrivesForFullScan=$true;DisableScanningNetworkFiles=$true})}
++        Threats=[ordered]@{Status='Empty';Data=@()};Detections=[ordered]@{Status='Empty';Data=@()};Events=[ordered]@{Status='Empty';Data=@()}
++    }
++}
++function Event($Id,$Record,$At,$ScanId='fixture',$Mode='Full Scan') {[pscustomobject]@{Id=$Id;RecordId=$Record;TimeCreated=$At;ScanId=$ScanId;ScanType='Antimalware';ScanParameters=$Mode}}
++function Reset {
++    $script:calls=@();$script:states=@((ReadyState),(ReadyState),(ReadyState));$script:reads=0;$script:simAdmin=$true;$script:throwAction=$false;$script:saveFail='';$script:throwAfter=$false
++}
++# Save adapter still performs actual atomic local writes, with injected failures.
++# Invoke the unmodified saved writer in a private scope.
++function Save-SimReport($Record,[string]$Path){if($script:saveFail -and $Path.EndsWith($script:saveFail)){throw 'Injected disk write failure'};& {param($r,$p,$definition). ([scriptblock]::Create($definition));Save-SimReport $r $p} $Record $Path $definitions['Save-SimReport']}
++function Get-SimState {$i=[math]::Min($script:reads,2);$script:reads++;if($i -eq 2 -and $script:throwAfter){throw 'Injected after query failure'};return $script:states[$i]}
++function Show-SimPolicy($State){}
++function Start-MpScan {[CmdletBinding()]param($ScanType)$script:calls+='Scan:'+ $ScanType;if($script:throwAction){throw 'Injected scan failure after partial progress'}}
++function Update-MpSignature {[CmdletBinding()]param()$script:calls+='Update';if($script:throwAction){throw 'Injected update failure'}}
++function Remove-MpThreat {[CmdletBinding()]param()$script:calls+='Remediate';if($script:throwAction){throw 'Injected remediation failure'}}
++function Start-MpWDOScan {throw 'SAFETY FAILURE: offline dispatch must never execute'}
++function LastReport {$dir=Get-ChildItem -LiteralPath $simReports -Directory | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1; Get-Content -LiteralPath (Join-Path $dir.FullName '03-final.json') -Raw | ConvertFrom-Json}
++function ActiveThreat($Resource='C:\fixture\safe.exe'){[pscustomobject]@{ThreatID=1;IsActive=$true;ThreatName='Synthetic';Resources=@($Resource);DidThreatExecute=$false;SeverityID=1}}
++
++foreach($fixture in @(@{M='HP';Model='Victus by HP Laptop';Expected='Victus';Valid=$true},@{M='GIGABYTE';Model='G6 KF';Expected='Gigabyte';Valid=$true},@{M='PHP';Model='Victus';Expected='Victus';Valid=$false},@{M='HP';Model='NotVictus';Expected='Victus';Valid=$false},@{M='GIGABYTE';Model='G6 KFA';Expected='Gigabyte';Valid=$false},@{M='HP';Model='Victus';Expected='Gigabyte';Valid=$false})) {
++    Case "Target $($fixture.M)/$($fixture.Model)/$($fixture.Expected)" {Assert ((Test-SimTarget ([pscustomobject]@{Manufacturer=$fixture.M;Model=$fixture.Model}) $fixture.Expected) -eq $fixture.Valid)}
++}
++Case 'Null target refused' {Assert (-not (Test-SimTarget $null 'Victus'))}
++Case 'Multiple targets refused' {Assert (-not (Test-SimTarget @($simComputer,$simComputer) 'Victus'))}
++Case 'Empty singleton unavailable' {Assert ((Read-SimSection -Singleton {}).Status -eq 'Unavailable')}
++Case 'Explicit null query unavailable' {Assert ((Read-SimSection {$null}).Status -eq 'Unavailable')}
++Case 'Empty list distinguished' {Assert ((Read-SimSection {}).Status -eq 'Empty')}
++Case 'Thrown query unavailable, defined empty Data' {$s=Read-SimSection {throw 'synthetic'};Assert ($s.Status -eq 'Unavailable' -and $s.Data.Count -eq 0)}
++Case 'Nonterminating query error unavailable' {Assert ((Read-SimSection {Write-Error 'synthetic'}).Status -eq 'Unavailable')}
++Case 'Hidden exclusions placeholder refused' {Assert ((Read-SimSection -Required ExclusionPath {[pscustomobject]@{ExclusionPath='N/A: Must be an administrator to view exclusions'}}).Status -eq 'Unavailable')}
++Case 'Unknown state read-only partial' {Reset;$script:states[0].Defender.Status='Unavailable';$r=Invoke-SimAction Status $false;Assert ($r.Result -eq 'PartialReadOnlySnapshot' -and $script:calls.Count -eq 0)}
++foreach($mode in @('Passive','EDR Block Mode','')){Case "Defender mode '$mode' refused" {Reset;$script:states[0].Defender.Data[0].AMRunningMode=$mode;MustThrow {Invoke-SimAction FullScan $true} 'disabled, passive, or unknown';Assert ($script:calls.Count -eq 0)}}
++Case 'String false is not a boolean state' {Reset;$script:states[0].Defender.Data[0].AntivirusEnabled='false';MustThrow {Invoke-SimAction FullScan $true} 'disabled, passive, or unknown';Assert ($script:calls.Count -eq 0)}
++Case 'Nonadmin refuses action' {Reset;$script:simAdmin=$false;MustThrow {Invoke-SimAction FullScan $true} 'Administrator';Assert ($script:calls.Count -eq 0)}
++Case 'No consent refuses action' {Reset;MustThrow {Invoke-SimAction FullScan $false} 'not acknowledged';Assert ($script:calls.Count -eq 0)}
++Case 'Unknown policy refuses action' {Reset;$script:states[0].Preferences.Status='Unavailable';MustThrow {Invoke-SimAction FullScan $true} 'policy unavailable';Assert ($script:calls.Count -eq 0)}
++Case 'Policy changed since review refuses action' {Reset;$script:states[1].Preferences.Data[0].SubmitSamplesConsent=2;MustThrow {Invoke-SimAction FullScan $true} 'policy changed';Assert ($script:calls.Count -eq 0)}
++Case 'Signature updates require consent' {Reset;MustThrow {Invoke-SimAction UpdateSignatures $false} 'not acknowledged';Assert ($script:calls.Count -eq 0)}
++Case 'Signature update uses mock and three phase files' {Reset;$r=Invoke-SimAction UpdateSignatures $true;Assert (($script:calls -join ',') -eq 'Update');$files=Get-ChildItem (Join-Path $simReports $r.RunId);Assert ($files.Count -eq 3)}
++Case 'Offline always blocked even acknowledged' {Reset;MustThrow {Invoke-SimAction OfflineScan $true} 'OfflineScan blocked';Assert ($script:calls.Count -eq 0)}
++Case 'Initial evidence failure prevents dispatch' {Reset;$script:saveFail='01-before.json';MustThrow {Invoke-SimAction FullScan $true} 'disk write';Assert ($script:calls.Count -eq 0)}
++Case 'Intent evidence failure prevents dispatch' {Reset;$script:saveFail='02-intent.json';MustThrow {Invoke-SimAction FullScan $true} 'disk write';Assert ($script:calls.Count -eq 0)}
++Case 'Action failure captures after state' {Reset;$script:throwAction=$true;MustThrow {Invoke-SimAction FullScan $true} 'Injected scan failure';$r=LastReport;Assert ($null -ne $r.After -and $r.Error -match 'Injected scan failure')}
++Case 'Final evidence failure preserves primary error and before/intent' {Reset;$script:throwAction=$true;$script:saveFail='03-final.json';MustThrow {Invoke-SimAction FullScan $true} 'Injected scan failure.*Final evidence';$dir=Get-ChildItem $simReports -Directory|Sort-Object LastWriteTimeUtc -Descending|Select-Object -First 1;Assert ((Test-Path (Join-Path $dir.FullName '01-before.json')) -and (Test-Path (Join-Path $dir.FullName '02-intent.json')))}
++Case 'Completed first FullScan exact correlated event/history' {Reset;$at=Get-Date;$script:states[2].Events=[ordered]@{Status='Retrieved';Data=@((Event 1000 1 $at),(Event 1001 2 $at.AddSeconds(1)))};$script:states[2].Defender.Data[0].FullScanStartTime=$at;$script:states[2].Defender.Data[0].FullScanEndTime=$at.AddSeconds(1);$r=Invoke-SimAction FullScan $true;Assert ($r.Result -eq 'CompletedWithCorrelatedEvidence' -and ($script:calls -join ',') -eq 'Scan:FullScan')}
++Case 'Command return without lifecycle is nonzero/unknown' {Reset;MustThrow {Invoke-SimAction FullScan $true} 'Unverified';Assert ((LastReport).Result -eq 'Unverified')}
++Case 'Cancelled scan has explicit outcome' {Reset;$at=Get-Date;$script:states[2].Events=[ordered]@{Status='Retrieved';Data=@((Event 1000 1 $at),(Event 1002 2 $at.AddSeconds(1)))};MustThrow {Invoke-SimAction FullScan $true} 'Cancelled';Assert ((LastReport).Result -eq 'Cancelled')}
++Case 'Cleanup missing token refused' {Reset;$script:states[0].Threats=[ordered]@{Status='Retrieved';Data=@((ActiveThreat))};$script:states[1].Threats=$script:states[0].Threats;MustThrow {Invoke-SimAction Remediate $true} 'token missing/stale';Assert ($script:calls.Count -eq 0)}
++Case 'Cleanup fresh reviewed token dispatches ALL mock once' {Reset;foreach($s in $script:states[0..1]){$s.Threats=[ordered]@{Status='Retrieved';Data=@((ActiveThreat))}};$token=Get-SimPlanToken $script:states[0];$r=Invoke-SimAction Remediate $true $token;Assert (($script:calls -join ',') -eq 'Remediate' -and $r.Result -match 'efficacy unverified')}
++Case 'Cleanup new resource invalidates token' {Reset;$script:states[0].Threats=[ordered]@{Status='Retrieved';Data=@((ActiveThreat))};$script:states[1].Threats=[ordered]@{Status='Retrieved';Data=@((ActiveThreat 'C:\fixture\new.exe'))};$token=Get-SimPlanToken $script:states[0];MustThrow {Invoke-SimAction Remediate $true $token} 'token missing/stale';Assert ($script:calls.Count -eq 0)}
++Case 'Cleanup no threats invokes no removal' {Reset;$token=Get-SimPlanToken $script:states[0];Invoke-SimAction Remediate $true $token | Out-Null;Assert ($script:calls.Count -eq 0)}
++Case 'Malformed threat boolean refused' {Reset;$script:states[0].Threats=[ordered]@{Status='Retrieved';Data=@([pscustomobject]@{ThreatID=1;IsActive='false'})};MustThrow {Get-SimPlanToken $script:states[0]} 'Malformed'}
++Case 'Unavailable threat plan refused' {Reset;$script:states[0].Threats.Status='Unavailable';MustThrow {Invoke-SimAction CleanupPlan $false} 'Readable threat';Assert ($script:calls.Count -eq 0)}
++Case 'Remaining active threats propagate incomplete outcome' {Reset;foreach($s in $script:states){$s.Threats=[ordered]@{Status='Retrieved';Data=@((ActiveThreat))}};$token=Get-SimPlanToken $script:states[0];MustThrow {Invoke-SimAction Remediate $true $token} 'Active threats remain'}
++Case 'Action primary error survives after collection failure' {Reset;$script:throwAction=$true;$script:throwAfter=$true;MustThrow {Invoke-SimAction FullScan $true} 'Injected scan failure.*After evidence failed';Assert ((LastReport).After.Status -eq 'Unavailable')}
++Case 'Unreadable events cause partial status' {Reset;$script:states[0].Events.Status='Unavailable';Assert ((Invoke-SimAction Status $false).Result -eq 'PartialReadOnlySnapshot')}
++Case 'Known preexisting active scan blocks new dispatch' {Reset;$script:states[1].Events=[ordered]@{Status='Retrieved';Data=@((Event 1000 1 (Get-Date).AddMinutes(-1)))};MustThrow {Invoke-SimAction FullScan $true} 'unresolved scan';Assert ($script:calls.Count -eq 0)}
++Case 'Unreadable pre-dispatch events block scan' {Reset;$script:states[1].Events.Status='Unavailable';MustThrow {Invoke-SimAction FullScan $true} 'evidence unavailable';Assert ($script:calls.Count -eq 0)}
++Case 'Wrong interactive acknowledgment cancels mutation' {Reset;function Read-Host {param($Prompt)'QuickScan'};try{MustThrow {Invoke-SimAction FullScan $false '' $true} 'not acknowledged';Assert ($script:calls.Count -eq 0)}finally{Remove-Item Function:\Read-Host}}
++
++# Exercise unmodified collection function with every OS/API dependency intercepted.
++function QueryFixture([string]$Kind) {
++    & {
++        param($kind,$definition)
++        . ([scriptblock]::Create($definition))
++        $state=ReadyState
++        $defender=$state.Defender.Data[0];$preferences=$state.Preferences.Data[0]
++        switch($kind){EmptyDefender{$defender=$null};MissingHistory{$defender.PSObject.Properties.Remove('FullScanEndTime')};HiddenExclusions{$preferences.ExclusionPath=@('N/A: Must be an administrator to view exclusions')};MissingExclusionField{$preferences.PSObject.Properties.Remove('ExclusionPath')};NullPreferences{$preferences=$null};StringCoverage{$preferences.DisableArchiveScanning='false'}}
++        function Get-MpComputerStatus {[CmdletBinding()]param()$defender}
++        function Get-MpPreference {[CmdletBinding()]param()$preferences}
++        function Get-MpThreat {[CmdletBinding()]param()}
++        function Get-MpThreatDetection {[CmdletBinding()]param()}
++        function Get-WinEvent {[CmdletBinding()]param($FilterHashtable,$MaxEvents)}
++        Get-SimState
++    } $Kind $definitions['Get-SimState']
++}
++Case 'Actual collector accepts genuine nullable empty exclusions' {$s=QueryFixture EmptyExclusions;Assert ($s.Preferences.Status -eq 'Retrieved');Assert-SimReady $s}
++Case 'Actual collector hidden admin sentinel fails closed' {Assert ((QueryFixture HiddenExclusions).Preferences.Status -eq 'Unavailable')}
++Case 'Actual collector missing exclusion property fails closed' {Assert ((QueryFixture MissingExclusionField).Preferences.Status -eq 'Unavailable')}
++Case 'Actual collector empty Defender singleton unavailable' {Assert ((QueryFixture EmptyDefender).Defender.Status -eq 'Unavailable')}
++Case 'Actual collector missing history is not first-scan null' {Assert ((QueryFixture MissingHistory).Defender.Status -eq 'Unavailable')}
++Case 'Actual collector null preferences unavailable' {Assert ((QueryFixture NullPreferences).Preferences.Status -eq 'Unavailable')}
++Case 'Actual collector string coverage refused' {$s=QueryFixture StringCoverage;MustThrow {Assert-SimReady $s} 'malformed'}
++Case 'Preflight omits redundant detection history' {
++ & {param($definition). ([scriptblock]::Create($definition));function Get-MpComputerStatus {[CmdletBinding()]param()(ReadyState).Defender.Data[0]};function Get-MpPreference {[CmdletBinding()]param()(ReadyState).Preferences.Data[0]};function Get-MpThreat {[CmdletBinding()]param()};function Get-MpThreatDetection {throw 'Redundant query must not run'};function Get-WinEvent {[CmdletBinding()]param($FilterHashtable,$MaxEvents)};$s=Get-SimState -PreflightOnly;Assert ($s.Detections.Status -eq 'NotCollected')} $definitions['Get-SimState']
++}
++Case 'Confirmed no matching events is known Empty history' {
++ function Get-WinEvent {[CmdletBinding()]param($FilterHashtable,$MaxEvents,$ListLog)if($ListLog){[pscustomobject]@{IsEnabled=$true}}else{Write-Error 'No matching fixtures' -ErrorId 'NoMatchingEventsFound,Microsoft.PowerShell.Commands.GetWinEventCommand'}}
++ try{Assert ((Get-SimEvents).Status -eq 'Empty')}finally{Remove-Item Function:\Get-WinEvent}
++}
++Case 'Disabled log is Unavailable despite no-matches signal' {
++ function Get-WinEvent {[CmdletBinding()]param($FilterHashtable,$MaxEvents,$ListLog)if($ListLog){[pscustomobject]@{IsEnabled=$false}}else{Write-Error 'No matching fixtures' -ErrorId 'NoMatchingEventsFound,Microsoft.PowerShell.Commands.GetWinEventCommand'}}
++ try{Assert ((Get-SimEvents).Status -eq 'Unavailable')}finally{Remove-Item Function:\Get-WinEvent}
++}
++Case 'Event permission failure is Unavailable not Empty' {
++ function Get-WinEvent {[CmdletBinding()]param($FilterHashtable,$MaxEvents,$ListLog)throw 'Synthetic access denied'}
++ try{Assert ((Get-SimEvents).Status -eq 'Unavailable')}finally{Remove-Item Function:\Get-WinEvent}
++}
++
++# Direct lifecycle matrix: no command dispatch, synthetic data only.
++$at=[datetime]'2026-10-13T01:00:00Z'
++function Lifecycle {
++    $before=ReadyState;$after=ReadyState
++    $after.Events=[ordered]@{Status='Retrieved';Data=@((Event 1000 1 $at),(Event 1001 2 $at.AddSeconds(30)))}
++    $after.Defender.Data[0].FullScanStartTime=$at;$after.Defender.Data[0].FullScanEndTime=$at.AddSeconds(30)
++    return @($before,$after)
++}
++foreach($kind in @('WrongId','WrongType','OtherStart','StaleHistory','MissingHistory','UnavailableLog','Truncated','Localized','Preexisting','ClearedLog')) {
++ Case "Lifecycle $kind cannot claim completion" {
++    $pair=Lifecycle;$b=$pair[0];$a=$pair[1]
++    switch($kind){
++      WrongId {$a.Events.Data[1].ScanId='other'}
++      WrongType {$a.Events.Data[0].ScanParameters='Quick Scan'}
++      OtherStart {$a.Events.Data+=Event 1000 3 $at.AddSeconds(2) 'other'}
++      StaleHistory {$b.Defender.Data[0].FullScanEndTime=$a.Defender.Data[0].FullScanEndTime}
++      MissingHistory {$a.Defender.Data[0].FullScanEndTime=$null}
++      UnavailableLog {$b.Events.Status='Unavailable'}
++      Truncated {$a.Events.Data=@($a.Events.Data[0])*4096}
++      Localized {$a.Events.Data[0].ScanParameters='Analyse complete'}
++      Preexisting {$a.Events.Data[0].TimeCreated=$at.AddHours(-1)}
++      ClearedLog {$b.Events=[ordered]@{Status='Retrieved';Data=@((Event 1117 200 $at.AddMinutes(-1)))}}
++    }
++    Assert ((Get-SimScanOutcome $b $a FullScan $at).Status -eq 'Unverified')
++ }
++}
++Case 'Historical real Quick Scan fixture (not invoked)' {
++ $fixture=Get-Content (Join-Path $PSScriptRoot 'historical-scan-fixture.json') -Raw|ConvertFrom-Json
++ $b=ReadyState;$a=ReadyState;$start=$fixture.Start;$start.TimeCreated=[datetime]$start.TimeCreated
++ foreach($e in $fixture.EndEvents){$e.TimeCreated=[datetime]$e.TimeCreated}
++ $a.Events=[ordered]@{Status='Retrieved';Data=@($start)+@($fixture.EndEvents)}
++ $a.Defender.Data[0].QuickScanStartTime=[datetime]$fixture.CurrentHistory.QuickScanStartTime;$a.Defender.Data[0].QuickScanEndTime=[datetime]$fixture.CurrentHistory.QuickScanEndTime
++ Assert ((Get-SimScanOutcome $b $a QuickScan $start.TimeCreated).Status -eq 'CompletedWithCorrelatedEvidence')
++}
++Case 'Named XML parsed; no localized message use' {
++ $event=[pscustomobject]@{Id=1000;RecordId=1;TimeCreated=$at};$event|Add-Member ScriptMethod ToXml {'<Event><EventData><Data Name="Scan ID">fixture</Data><Data Name="Scan Type">Antimalware</Data><Data Name="Scan Parameters">Quick Scan</Data></EventData></Event>'}
++ $r=Convert-SimEvent $event;Assert ($r.ScanId -eq 'fixture' -and $r.ScanParameters -eq 'Quick Scan')
++}
++function IntentFixture {
++ Reset;$pair=Lifecycle;$folder=Join-Path $OutputDirectory ('intent-'+[guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -Path $folder|Out-Null
++ $intent=[ordered]@{Tool='Sim Cleaner';Version='0.2.0';Device='Victus';RunId='original-synthetic';Action='FullScan';DispatchAt=$at.ToString('o');PreDispatch=$pair[0]}
++ Save-SimReport $intent (Join-Path $folder '02-intent.json');return @($folder,$pair[1])
++}
++Case 'Read-only recheck verifies delayed same-ID completion' {$fixture=IntentFixture;$script:states[0]=$fixture[1];$r=Invoke-SimAction RecheckScan $false '' $false $fixture[0];Assert ($r.Result -eq 'CompletedWithCorrelatedEvidence' -and $script:calls.Count -eq 0 -and $r.SourceIntent.SHA256.Length -eq 64)}
++Case 'Read-only recheck running/start-only remains Unverified' {$fixture=IntentFixture;$fixture[1].Events.Data=@($fixture[1].Events.Data[0]);$script:states[0]=$fixture[1];MustThrow {Invoke-SimAction RecheckScan $false '' $false $fixture[0]} 'Unverified';Assert ($script:calls.Count -eq 0)}
++Case 'Read-only recheck cancellation does not dispatch' {$fixture=IntentFixture;$fixture[1].Events.Data[1].Id=1002;$script:states[0]=$fixture[1];MustThrow {Invoke-SimAction RecheckScan $false '' $false $fixture[0]} 'Cancelled';Assert ($script:calls.Count -eq 0)}
++Case 'Read-only recheck rejects wrong-device intent' {Reset;$folder=Join-Path $OutputDirectory 'wrong-device';New-Item -ItemType Directory $folder|Out-Null;Save-SimReport @{Tool='Sim Cleaner';Version='0.2.0';Device='Gigabyte';Action='FullScan';PreDispatch=@{};DispatchAt=$at.ToString('o')} (Join-Path $folder '02-intent.json');MustThrow {Invoke-SimAction RecheckScan $false '' $false $folder} 'different-device';Assert ($script:calls.Count -eq 0)}
++Case 'Read-only recheck rejects remote input before access' {Reset;MustThrow {Invoke-SimAction RecheckScan $false '' $false '\\fixture.invalid\share'} 'absolute local';Assert ($script:calls.Count -eq 0)}
++foreach($path in @('\\fixture.invalid\share\a.exe','\\?\UNC\fixture.invalid\share\a.exe','\\.\C:\a.exe','relative.exe','C:\safe.exe:stream')){Case "Reject remote/device/ADS path $path" {MustThrow {Assert-SimLocalPath $path -Leaf} 'absolute local'}}
++Case 'Reparse ancestor rejected before descendant probe (inert mocks)' {
++ $script:probes=@()
++ function Test-Path {param($LiteralPath,$PathType)$script:probes+=$LiteralPath;return $true}
++ function Get-Item {[CmdletBinding()]param($LiteralPath,[switch]$Force)$script:probes+=$LiteralPath;[pscustomobject]@{Attributes=if($LiteralPath -eq 'C:\fixture\junction'){[IO.FileAttributes]::ReparsePoint}else{[IO.FileAttributes]::Directory}}}
++ try {MustThrow {Assert-SimLocalPath 'C:\fixture\junction\remote.exe' -Leaf} 'Reparse';Assert ($script:probes -notcontains 'C:\fixture\junction\remote.exe')}finally{Remove-Item Function:\Test-Path;Remove-Item Function:\Get-Item}
++}
++Case 'Bearer, quoted password, URL credentials minimized' {
++ $safe=Protect-SimText "authorization: Bearer SYNTHETIC_BEARER`npassword='SYNTHETIC MULTI WORD'`nhttps://syntheticuser:syntheticpass@example.invalid/p?q=SYNTHETIC_QUERY#secret"
++ Assert ($safe -notmatch 'SYNTHETIC|syntheticuser|syntheticpass|secret')
++}
++Case 'Safe report recursively minimizes synthetic secrets' {Reset;$path=Join-Path $OutputDirectory 'privacy.json';Save-SimReport ([ordered]@{Authorization='SYNTHETIC';Nested=@('authorization: Bearer SYNTHETIC')}) $path;Assert ((Get-Content $path -Raw) -notmatch 'SYNTHETIC')}
++Case 'Atomic report refuses overwrite and preserves bytes' {Reset;$path=Join-Path $OutputDirectory 'durable.json';Save-SimReport @{Value=1} $path;$old=(Get-FileHash $path).Hash;MustThrow {Save-SimReport @{Value=2} $path} 'refusing overwrite';Assert ((Get-FileHash $path).Hash -eq $old)}
++Case 'Unique run directories even close invocation times' {Reset;$a=Invoke-SimAction Status $false;Reset;$b=Invoke-SimAction Status $false;Assert ($a.RunId -ne $b.RunId)}
++Case 'Lock refuses another thread/runspace, releases afterwards' {
++ $lock=Enter-SimLock
++ $ps=[powershell]::Create()
++ try {$ps.AddScript('$m=[Threading.Mutex]::new($false,"Global\SimCleaner.LocalReview.v02");try{$got=$m.WaitOne(0);if($got){$m.ReleaseMutex()};$got}finally{$m.Dispose()}')|Out-Null;$r=$ps.Invoke();Assert ($r.Count -eq 1 -and $r[0] -eq $false)}finally{$ps.Dispose();Exit-SimLock $lock}
++ $again=Enter-SimLock;Exit-SimLock $again
++}
++Case 'Unavailable count is Unknown, not null row 1' {Assert ((Get-InspectionCount @{Status='Unavailable';Data=@()}) -eq 'Unknown')}
++Case 'Empty count is known zero' {Assert ((Get-InspectionCount @{Status='Empty';Data=@()}) -eq 0)}
++Case 'Nested socket failures included' {$problems=@(Get-InspectionProblems @{SocketSamples=@(@{Status='Unavailable';Error='fixture';Data=@()})});Assert ($problems.Count -eq 1 -and $problems[0] -match 'SocketSamples/0')}
++Case 'DomainAuthenticated maps to effective Domain firewall' {$summary=Get-InspectionFirewallSummary ([pscustomobject]@{NetworkCategory='DomainAuthenticated';InterfaceAlias='fixture'}) @{Status='Retrieved';Data=@([pscustomobject]@{Name='Domain';Enabled=$true})};Assert ($summary -match 'Domain; firewall enabled: True.*ActiveStore')}
++Case 'Missing firewall profile is Unknown' {Assert ((Get-InspectionFirewallSummary ([pscustomobject]@{NetworkCategory='DomainAuthenticated'}) @{Status='Unavailable';Data=@()}) -match 'Unknown')}
++Case 'Inspector child nonzero propagated using inert function adapter' {
++ function Get-Process {param($Id)[pscustomobject]@{Path='Invoke-InertInspectionChild'}}
++ function Invoke-InertInspectionChild {param([switch]$NoProfile,$File,$ExpectedDevice)$global:LASTEXITCODE=7}
++ try {MustThrow {Invoke-SimInspection} 'exit 7'}finally{Remove-Item Function:\Get-Process;Remove-Item Function:\Invoke-InertInspectionChild}
++}
++# Static boundary assertions complement mocks; they are not Windows integration tests.
++$inspector=Get-Content (Join-Path $kitPath 'Inspect-Windows.ps1') -Raw;$source=Get-Content (Join-Path $kitPath 'SimCleaner.ps1') -Raw
++Case 'No offline API call in production source' {Assert ($source -notmatch 'Start-MpWDOScan')}
++Case 'Effective firewall store explicit in exact package' {Assert ($inspector -match 'Get-NetFirewallProfile -PolicyStore ActiveStore')}
++Case 'Installed provider subset used for bounded event query' {Assert ($inspector -match 'Filter.ProviderName=@\(\$ProviderCoverage.InstalledProviders\)' -and $inspector -match 'TcpAllocationEvents=Get-InspectionEventSection')}
++Case 'Missing optional driver provider does not break installed event query' {
++ $script:queriedProviders=@()
++ function Get-WinEvent {[CmdletBinding()]param($ListProvider,$FilterHashtable,$MaxEvents,$ListLog)
++  if($ListProvider){throw 'Full provider metadata must not be queried'}
++  elseif($ListLog){[pscustomobject]@{IsEnabled=$true}}
++  else{$script:queriedProviders=@($FilterHashtable.ProviderName);[pscustomobject]@{Id=4231;ProviderName='Tcpip';TimeCreated=Get-Date;LevelDisplayName='Warning'}}
++ }
++ try{$coverage=Get-InspectionProviderCoverage @('Tcpip','Netwtw10','Netwtw14') @{Status='Retrieved';Data=@('Tcpip','Netwtw14')};$section=Get-InspectionEventSection System @{LogName='System';StartTime=(Get-Date).AddDays(-7)} 500 $coverage;Assert ($coverage.Status -eq 'Retrieved' -and $coverage.AbsentProviders -contains 'Netwtw10' -and $section.Status -eq 'Retrieved' -and $script:queriedProviders -notcontains 'Netwtw10' -and $script:queriedProviders -contains 'Netwtw14')}
++ finally{Remove-Item Function:\Get-WinEvent}
++}
++Case 'Provider access denied remains unknown and blocks empty-success query' {
++ $script:eventQueryCalled=$false
++ function Get-WinEvent {[CmdletBinding()]param($ListProvider,$FilterHashtable,$MaxEvents,$ListLog)if($ListProvider){throw 'Synthetic metadata access denied'}else{$script:eventQueryCalled=$true}}
++ try{$coverage=Get-InspectionProviderCoverage @('Tcpip') @{Status='Unavailable';Data=@();Error='Synthetic access denied'};$section=Get-InspectionEventSection System @{LogName='System';StartTime=Get-Date} 500 $coverage;Assert ($coverage.Status -eq 'Unavailable' -and $section.Status -eq 'Unavailable' -and -not $script:eventQueryCalled)}finally{Remove-Item Function:\Get-WinEvent}
++}
++Case 'No installed TCP providers is unknown, not zero failures' {
++ function Get-WinEvent {[CmdletBinding()]param($ListProvider,$FilterHashtable,$MaxEvents,$ListLog)Write-Error 'Missing fixture provider' -ErrorId 'NoMatchingProvidersFound,Microsoft.PowerShell.Commands.GetWinEventCommand'}
++ try{$coverage=Get-InspectionProviderCoverage @('Tcpip') @{Status='Retrieved';Data=@('OtherPublisher')};$section=Get-InspectionEventSection System @{LogName='System'} 500 $coverage;Assert ($section.Status -eq 'Unavailable')}
++ finally{Remove-Item Function:\Get-WinEvent}
++}
++Case 'Known no event matches requires readable enabled log' {
++ function Get-WinEvent {[CmdletBinding()]param($ListProvider,$FilterHashtable,$MaxEvents,$ListLog)if($ListLog){[pscustomobject]@{IsEnabled=$true}}else{Write-Error 'No matching synthetic events' -ErrorId 'NoMatchingEventsFound,Microsoft.PowerShell.Commands.GetWinEventCommand'}}
++ try{$section=Get-InspectionEventSection System @{LogName='System'} 500;Assert ($section.Status -eq 'Empty' -and -not $section.CapReached)}finally{Remove-Item Function:\Get-WinEvent}
++}
++Case 'No matching events with unreadable log remains unavailable' {
++ function Get-WinEvent {[CmdletBinding()]param($ListProvider,$FilterHashtable,$MaxEvents,$ListLog)if($ListLog){throw 'Synthetic log access denied'}else{Write-Error 'No matches' -ErrorId 'NoMatchingEventsFound,Microsoft.PowerShell.Commands.GetWinEventCommand'}}
++ try{Assert ((Get-InspectionEventSection System @{LogName='System'} 500).Status -eq 'Unavailable')}finally{Remove-Item Function:\Get-WinEvent}
++}
++Case 'Dedicated TCP query cannot be crowded out by general provider cap' {
++ $script:filterSeen=$null
++ function Get-WinEvent {[CmdletBinding()]param($ListProvider,$FilterHashtable,$MaxEvents,$ListLog)$script:filterSeen=$FilterHashtable;[pscustomobject]@{Id=4231;ProviderName='Tcpip';TimeCreated=Get-Date;LevelDisplayName='Warning'}}
++ try{$coverage=@{Status='Retrieved';InstalledProviders=@('Tcpip')};$s=Get-InspectionEventSection System @{LogName='System';Id=@(4231,4266,4227);StartTime=(Get-Date).AddDays(-7)} 500 $coverage;Assert ($s.Status -eq 'Retrieved' -and ($script:filterSeen.Id -join ',') -eq '4231,4266,4227' -and $s.Data.Count -eq 1)}finally{Remove-Item Function:\Get-WinEvent}
++}
++Case 'No untrusted CSV written' {Assert ($inspector -notmatch 'Export-Csv')}
++Case 'Downloads do not follow redirects' {Assert ($inspector -match '-MaximumRedirection 0')}
++Case 'External tools and EULA require explicit options' {Assert ($inspector -match 'UseMicrosoftTools -and -not \$AcceptToolEula' -and $inspector -match 'if\(-not \$DownloadMicrosoftTools\)')}
++Case 'No VirusTotal flags added' {Assert ($inspector -notmatch "'-(v|vs|vt)'" )}
++Case 'Launchers preserve exit and avoid PATH search' {foreach($file in Get-ChildItem $kitPath -Filter '*.cmd'){$text=Get-Content $file.FullName -Raw;Assert ($text -match 'setlocal' -and $text -match 'exit /b %inspection_exit%' -and $text -notmatch 'where pwsh|set .*pwsh.exe')}}
++
++# Exercise bounded process wrapper only against a reviewed inert PowerShell fixture.
++# Current host executable is used explicitly; no collector/scan entry point runs.
++$runtime=(Get-Process -Id $PID).Path
++Case 'Bounded runner handles declared strict UTF8 fixture' {$r=Invoke-InspectionTool $runtime @('-NoProfile','-NonInteractive','-Command','[Console]::OutputEncoding=[Text.Encoding]::UTF8;[Console]::Write("fixture café")') 10 -OutputEncoding Utf8;Assert ($r -eq 'fixture café')}
++Case 'Unsupported high byte rejected by default ASCII contract' {MustThrow {Invoke-InspectionTool $runtime @('-NoProfile','-NonInteractive','-Command','$s=[Console]::OpenStandardOutput();$s.Write([byte[]]@(255),0,1)') 10} 'decoding failed under Ascii';}
++Case 'Malformed UTF8 rejected without replacement character or cap misclassification' {
++ $message=$null;try{Invoke-InspectionTool $runtime @('-NoProfile','-NonInteractive','-Command','$s=[Console]::OpenStandardOutput();$s.Write([byte[]]@(255),0,1);Start-Sleep -Milliseconds 300') 10 -OutputEncoding Utf8|Out-Null}catch{$message=$_.Exception.Message}
++ Assert ($message -match 'decoding failed under Utf8' -and $message -notmatch 'cap exceeded|�')
++}
++Case 'Strict UTF16LE accepts BOM and Unicode fixture' {$r=Invoke-InspectionTool $runtime @('-NoProfile','-NonInteractive','-Command','$s=[Console]::OpenStandardOutput();$b=[byte[]]@(255,254)+[Text.Encoding]::Unicode.GetBytes("fixture café");$s.Write($b,0,$b.Length)') 10 -OutputEncoding Utf16LE;Assert ($r -eq 'fixture café')}
++Case 'Unknown UTF16 without BOM unavailable' {MustThrow {Invoke-InspectionTool $runtime @('-NoProfile','-NonInteractive','-Command','[Console]::OutputEncoding=[Text.Encoding]::UTF8;[Console]::Write("fixture")') 10 -OutputEncoding Utf16LE} 'missing UTF-16LE BOM'}
++Case 'Malformed UTF16 rejected without silent replacement' {MustThrow {Invoke-InspectionTool $runtime @('-NoProfile','-NonInteractive','-Command','$s=[Console]::OpenStandardOutput();$s.Write([byte[]]@(255,254,65),0,3)') 10 -OutputEncoding Utf16LE} 'decoding failed under Utf16LE'}
++Case 'Early decoding stream fault keeps decoding classification while child lives' {MustThrow {Invoke-InspectionTool $runtime @('-NoProfile','-NonInteractive','-Command','$s=[Console]::OpenStandardOutput();$s.Write([byte[]]@(255),0,1);$s.Close();Start-Sleep -Seconds 2') 10 -OutputEncoding Utf8} 'decoding failed under Utf8'}
++Case 'Bounded runner rejects inert child nonzero' {MustThrow {Invoke-InspectionTool $runtime @('-NoProfile','-NonInteractive','-Command','exit 7') 10} 'exit code 7'}
++Case 'Bounded runner output cap kills only its fixture child' {MustThrow {Invoke-InspectionTool $runtime @('-NoProfile','-NonInteractive','-Command','[Console]::Write(("x"*2200000))') 10} 'cap exceeded|aggregate'}
++Case 'Bounded runner timeout kills only its fixture child' {MustThrow {Invoke-InspectionTool $runtime @('-NoProfile','-NonInteractive','-Command','Start-Sleep -Seconds 5') 1} 'timeout'}
++Case 'Changed collector fingerprint rejected under held handle' {MustThrow {Invoke-InspectionTool $runtime @('-NoProfile','-NonInteractive','-Command','[Console]::Write("must not start")') 10 -ExpectedHash ('0'*64)} 'changed before launch'}
++Case 'Unexpected tool download host rejected before transfer' {MustThrow {Get-VerifiedMicrosoftTool Autoruns 'https://fixture.invalid/a.zip' 'Autorunsc64.exe'} 'official Sysinternals'}
++Case 'Tool download requires explicit opt-in' {$DownloadMicrosoftTools=$false;MustThrow {Get-VerifiedMicrosoftTool Autoruns 'https://download.sysinternals.com/files/Autoruns.zip' 'Autorunsc64.exe'} 'explicit -Download'}
++Case 'Unexpected tool binary name rejected' {MustThrow {Get-VerifiedMicrosoftTool Autoruns 'https://download.sysinternals.com/files/Autoruns.zip' 'other.exe'} 'Unexpected collector'}
++
++$failures=@($script:results|Where-Object {-not $_.Passed})
++$evidence=[ordered]@{Scope='AST-loaded reviewed definitions; mocked Defender/CIM/events/tools; local atomic writes; inert output-only/process-timeout fixtures. No live scans, remediation, updates, downloads, reboot, EICAR, settings changes or sample uploads.';Runtime=$PSVersionTable.PSVersion.ToString();ExecutedAt=(Get-Date).ToString('o');Passed=$script:results.Count-$failures.Count;Failed=$failures.Count;HarnessSHA256=(Get-FileHash $PSCommandPath).Hash;HistoricalFixtureSHA256=(Get-FileHash (Join-Path $PSScriptRoot 'historical-scan-fixture.json')).Hash;SourceHashes=@(Get-ChildItem $kitPath -Filter '*.ps1' | ForEach-Object {@{File=$_.Name;SHA256=(Get-FileHash $_.FullName).Hash}});Results=@($script:results)}
++$evidence|ConvertTo-Json -Depth 12|Set-Content -LiteralPath (Join-Path $OutputDirectory 'test-results.json') -Encoding utf8
++$script:results|Format-Table Test,Passed,Error -Wrap
++Write-Host "Passed: $($evidence.Passed); failed: $($evidence.Failed); evidence: $OutputDirectory"
++if($failures.Count){exit 1}
+--- /dev/null
++++ b/Tests/historical-scan-fixture.json
+@@ -0,0 +1,32 @@
++{
++  "Scope": "Historical real event fixture only; no Sim Cleaner scan invoked, no fabricated scan outcome",
++  "CapturedAt": "2026-10-12T20:49:39.4745924-06:00",
++  "Start": {
++    "Id": 1000,
++    "RecordId": 2844,
++    "TimeCreated": "2026-10-12T09:28:36.0958431-06:00",
++    "ScanId": "{6E1DDD0D-4284-459E-A20C-B31FBFED4F59}",
++    "ScanType": "Antimalware",
++    "ScanParameters": "Quick Scan",
++    "ScanTypeIndex": "1",
++    "ScanParametersIndex": "1"
++  },
++  "EndEvents": [
++    {
++      "Id": 1001,
++      "RecordId": 2846,
++      "TimeCreated": "2026-10-12T09:29:54.4041304-06:00",
++      "ScanId": "{6E1DDD0D-4284-459E-A20C-B31FBFED4F59}",
++      "ScanType": "Antimalware",
++      "ScanParameters": "Quick Scan",
++      "ScanTypeIndex": "1",
++      "ScanParametersIndex": "1"
++    }
++  ],
++  "CurrentHistory": {
++    "QuickScanStartTime": "2026-10-12T09:28:36.095-06:00",
++    "QuickScanEndTime": "2026-10-12T09:29:54.399-06:00",
++    "FullScanStartTime": null,
++    "FullScanEndTime": null
++  }
++}

@@ -1,0 +1,71 @@
+{
+  "Date": "2026-10-12",
+  "Device": "GIGABYTE G6 KF",
+  "ArchiveSHA256": "5321b4980bb67318c0586319ad6b642ca524abbd874b52f0c7a6fce556b47cf1",
+  "ArchiveManifestEntries": 23,
+  "InertTestsPassed": 112,
+  "InertTestsFailed": 0,
+  "SourceHashes": [
+    {
+      "File": "Inspect-Windows.ps1",
+      "SHA256": "26C237B7558236CB38F114D2195AD0ED2D65D0072D7B169C4466FA363C182CB6"
+    },
+    {
+      "File": "Launch-SimCleaner.ps1",
+      "SHA256": "D0486C577B390D4AFBABDD65304F700AE8C6E15950F21DBC297E717E84E32893"
+    },
+    {
+      "File": "Safety.ps1",
+      "SHA256": "09B00F50C1F5FB6EB7C2AF03C5B8436C6096120A06CEB848063165F7FFCCB4F2"
+    },
+    {
+      "File": "SimCleaner.ps1",
+      "SHA256": "2E519810E02F76FED93C96D27108AA29F28E2FFCC891433011B272F133987001"
+    }
+  ],
+  "HarnessSHA256": "8F5BB05553537C4F79B1B38B80A689C4967BB07301D0F9BF7F53701579559F8E",
+  "LiveGuardCases": [
+    {
+      "Case": "correct-target",
+      "Exit": 0,
+      "Expected": 0,
+      "Passed": true
+    },
+    {
+      "Case": "wrong-target",
+      "Exit": 1,
+      "Expected": 1,
+      "Passed": true
+    },
+    {
+      "Case": "status",
+      "Exit": 3,
+      "Expected": 3,
+      "Passed": true
+    },
+    {
+      "Case": "nonadmin-fullscan-refusal",
+      "Exit": 1,
+      "Expected": 1,
+      "Passed": true
+    },
+    {
+      "Case": "offline-blocked",
+      "Exit": 1,
+      "Expected": 1,
+      "Passed": true
+    }
+  ],
+  "NoDispatchEvidence": true,
+  "Runtime": {
+    "SHA256": "362A356CE7F0940EC74F73A8FC2C990A2CC24A38A11C90BBD8ECA947110AD139",
+    "Version": "7.6.5",
+    "Signature": "Valid",
+    "Signer": "CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
+  },
+  "Limits": [
+    "No real elevated scan, quarantine, remediation, offline scan, EICAR or protection-setting changes performed.",
+    "Live status is partial under nonadministrator rights.",
+    "Inert tests are not malware-detection or removal-efficacy tests."
+  ]
+}

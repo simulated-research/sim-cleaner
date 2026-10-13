@@ -1,0 +1,32 @@
+{
+  "Scope": "Historical real event fixture only; no Sim Cleaner scan invoked, no fabricated scan outcome",
+  "CapturedAt": "2026-10-12T20:49:39.4745924-06:00",
+  "Start": {
+    "Id": 1000,
+    "RecordId": 2844,
+    "TimeCreated": "2026-10-12T09:28:36.0958431-06:00",
+    "ScanId": "{6E1DDD0D-4284-459E-A20C-B31FBFED4F59}",
+    "ScanType": "Antimalware",
+    "ScanParameters": "Quick Scan",
+    "ScanTypeIndex": "1",
+    "ScanParametersIndex": "1"
+  },
+  "EndEvents": [
+    {
+      "Id": 1001,
+      "RecordId": 2846,
+      "TimeCreated": "2026-10-12T09:29:54.4041304-06:00",
+      "ScanId": "{6E1DDD0D-4284-459E-A20C-B31FBFED4F59}",
+      "ScanType": "Antimalware",
+      "ScanParameters": "Quick Scan",
+      "ScanTypeIndex": "1",
+      "ScanParametersIndex": "1"
+    }
+  ],
+  "CurrentHistory": {
+    "QuickScanStartTime": "2026-10-12T09:28:36.095-06:00",
+    "QuickScanEndTime": "2026-10-12T09:29:54.399-06:00",
+    "FullScanStartTime": null,
+    "FullScanEndTime": null
+  }
+}

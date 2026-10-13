@@ -1,0 +1,729 @@
+{
+  "Scope": "AST-loaded reviewed definitions; mocked Defender/CIM/events/tools; local atomic writes; inert output-only/process-timeout fixtures. No live scans, remediation, updates, downloads, reboot, EICAR, settings changes or sample uploads.",
+  "Runtime": "7.6.5",
+  "ExecutedAt": "2026-10-13T09:35:10.3649721-06:00",
+  "Passed": 140,
+  "Failed": 0,
+  "HarnessSHA256": "F7ACE629D7D9C7390348526465FC1A8213E61D78B76F4C7C9BD5159D0DA42E0B",
+  "HistoricalFixtureSHA256": "5CB83B0CD5B98EA5748B8B1D0041B4B0318615CE4986373E17245829C1F9E37C",
+  "SourceHashes": [
+    {
+      "File": "Inspect-Windows.ps1",
+      "SHA256": "35AFB692F374EDCD6BCC3C68C1F8050095C90AD063341F790DCDD43761F7C7C3"
+    },
+    {
+      "File": "Launch-SimCleaner.ps1",
+      "SHA256": "D0486C577B390D4AFBABDD65304F700AE8C6E15950F21DBC297E717E84E32893"
+    },
+    {
+      "File": "Safety.ps1",
+      "SHA256": "09B00F50C1F5FB6EB7C2AF03C5B8436C6096120A06CEB848063165F7FFCCB4F2"
+    },
+    {
+      "File": "SimCleaner.ps1",
+      "SHA256": "2E519810E02F76FED93C96D27108AA29F28E2FFCC891433011B272F133987001"
+    }
+  ],
+  "Results": [
+    {
+      "Test": "Target HP/Victus by HP Laptop/Victus",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Target GIGABYTE/G6 KF/Gigabyte",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Target PHP/Victus/Victus",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Target HP/NotVictus/Victus",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Target GIGABYTE/G6 KFA/Gigabyte",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Target HP/Victus/Gigabyte",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Null target refused",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Multiple targets refused",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Empty singleton unavailable",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Explicit null query unavailable",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Empty list distinguished",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Thrown query unavailable, defined empty Data",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Nonterminating query error unavailable",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Hidden exclusions placeholder refused",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Unknown state read-only partial",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Defender mode 'Passive' refused",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Defender mode 'EDR Block Mode' refused",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Defender mode '' refused",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "String false is not a boolean state",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Nonadmin refuses action",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "No consent refuses action",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Unknown policy refuses action",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Policy changed since review refuses action",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Signature updates require consent",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Signature update uses mock and three phase files",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Offline always blocked even acknowledged",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Initial evidence failure prevents dispatch",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Intent evidence failure prevents dispatch",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Action failure captures after state",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Final evidence failure preserves primary error and before/intent",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Completed first FullScan exact correlated event/history",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Command return without lifecycle is nonzero/unknown",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Cancelled scan has explicit outcome",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Cleanup missing token refused",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Cleanup fresh reviewed token dispatches ALL mock once",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Cleanup new resource invalidates token",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Cleanup no threats invokes no removal",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Malformed threat boolean refused",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Unavailable threat plan refused",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Remaining active threats propagate incomplete outcome",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Action primary error survives after collection failure",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Unreadable events cause partial status",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Known preexisting active scan blocks new dispatch",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Unreadable pre-dispatch events block scan",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Wrong interactive acknowledgment cancels mutation",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Actual collector accepts genuine nullable empty exclusions",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Actual collector hidden admin sentinel fails closed",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Actual collector missing exclusion property fails closed",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Actual collector empty Defender singleton unavailable",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Actual collector missing history is not first-scan null",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Actual collector null preferences unavailable",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Actual collector string coverage refused",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Preflight omits redundant detection history",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Confirmed no matching events is known Empty history",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Disabled log is Unavailable despite no-matches signal",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Event permission failure is Unavailable not Empty",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Lifecycle WrongId cannot claim completion",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Lifecycle WrongType cannot claim completion",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Lifecycle OtherStart cannot claim completion",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Lifecycle StaleHistory cannot claim completion",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Lifecycle MissingHistory cannot claim completion",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Lifecycle UnavailableLog cannot claim completion",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Lifecycle Truncated cannot claim completion",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Lifecycle Localized cannot claim completion",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Lifecycle Preexisting cannot claim completion",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Lifecycle ClearedLog cannot claim completion",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Historical real Quick Scan fixture (not invoked)",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Named XML parsed; no localized message use",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Read-only recheck verifies delayed same-ID completion",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Read-only recheck running/start-only remains Unverified",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Read-only recheck cancellation does not dispatch",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Read-only recheck rejects wrong-device intent",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Read-only recheck rejects remote input before access",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Reject remote/device/ADS path \\\\fixture.invalid\\share\\a.exe",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Reject remote/device/ADS path \\\\?\\UNC\\fixture.invalid\\share\\a.exe",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Reject remote/device/ADS path \\\\.\\C:\\a.exe",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Reject remote/device/ADS path relative.exe",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Reject remote/device/ADS path C:\\safe.exe:stream",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Reparse ancestor rejected before descendant probe (inert mocks)",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Bearer, quoted password, URL credentials minimized",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Safe report recursively minimizes synthetic secrets",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Atomic report refuses overwrite and preserves bytes",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Unique run directories even close invocation times",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Lock refuses another thread/runspace, releases afterwards",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Unavailable count is Unknown, not null row 1",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Empty count is known zero",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Nested socket failures included",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "DomainAuthenticated maps to effective Domain firewall",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Missing firewall profile is Unknown",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Inspector child nonzero propagated using inert function adapter",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "No offline API call in production source",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Effective firewall store explicit in exact package",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Installed provider subset used for bounded event query",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Missing optional driver provider does not break installed event query",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Provider access denied remains unknown and blocks empty-success query",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "No installed TCP providers is unknown, not zero failures",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Known no event matches requires readable enabled log",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "No matching events with unreadable log remains unavailable",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Dedicated TCP query cannot be crowded out by general provider cap",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "No untrusted CSV written",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Downloads do not follow redirects",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "External tools and EULA require explicit options",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "No VirusTotal flags added",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Launchers preserve exit and avoid PATH search",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Official lowercase Autoruns member accepted",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Windows-equivalent case variant accepted uniquely",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Case-colliding collector members rejected",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Subdirectory collector member rejected",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Traversal collector member rejected",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Oversize collector member rejected",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Empty collector member rejected",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Unapproved canonical collector name rejected",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Observed Autorunsc shared GUI original filename accepted",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Observed signed Sigcheck family accepted",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Collector wrong original filename rejected",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Collector wrong product rejected",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Collector missing version rejected",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Collector invalid version rejected",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Collector null metadata rejected",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Actual metadata-only Autoruns schema accepted without signer",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Autoruns optional reported signer preserved without safety inference",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Autoruns missing required columns rejected",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Autoruns empty output rejected without clean inference",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Bounded runner handles declared strict UTF8 fixture",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Unsupported high byte rejected by default ASCII contract",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Malformed UTF8 rejected without replacement character or cap misclassification",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Strict UTF16LE accepts BOM and Unicode fixture",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Verified Sigcheck no-BOM contract accepts strict UTF16LE Unicode",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "No-BOM UTF16LE rejects odd malformed byte sequence",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "No-BOM UTF16LE does not silently accept a changed BOM contract",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Unknown UTF16 without BOM unavailable",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Malformed UTF16 rejected without silent replacement",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Early decoding stream fault keeps decoding classification while child lives",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Bounded runner rejects inert child nonzero",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Bounded runner output cap kills only its fixture child",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Bounded runner timeout kills only its fixture child",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Changed collector fingerprint rejected under held handle",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Unexpected tool download host rejected before transfer",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Tool download requires explicit opt-in",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Unexpected tool binary name rejected",
+      "Passed": true,
+      "Error": null
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "Tools": [
+    {
+      "Name": "Autoruns",
+      "FileVersion": "14.3",
+      "OriginalFilename": "autoruns.exe",
+      "SignatureStatus": "Valid",
+      "SHA256": "093D1C6B91D280C9644635C667753E0AA0E78C656EB4082147BF30364787D96F",
+      "OutputEncodingContract": "Strict UTF-16LE with BOM required"
+    },
+    {
+      "Name": "Sigcheck",
+      "FileVersion": "2.92",
+      "OriginalFilename": "sigcheck.exe",
+      "SignatureStatus": "Valid",
+      "SHA256": "3A081D7AE5A052F5A2FE918C1A9FED11EF7A6686AB2BF51204B5F1F75BF4038E",
+      "OutputEncodingContract": "Strict UTF-16LE without BOM, observed verified Sigcheck contract"
+    }
+  ],
+  "StartupStatus": "Retrieved",
+  "StartupCount": 1577,
+  "FollowupsStatus": "Retrieved",
+  "FollowupsCount": 30,
+  "FollowupsCompleted": 30,
+  "FollowupsSkipped": 0,
+  "SkipReasons": [],
+  "ProcessSignaturesCount": 52,
+  "TcpAllocationCount": 8,
+  "Unavailable": [],
+  "Limits": "No actual full antivirus scan, quarantine, remediation, reboot or security-setting changes."
+}

@@ -1,0 +1,149 @@
+--- a/Inspect-Windows.ps1
++++ b/Inspect-Windows.ps1
+@@ -84,10 +84,38 @@
+     [ordered]@{At=(Get-Date).ToString('o');TcpEndpointCount=$tcpSockets.Count;UdpEndpointCount=$udpSockets.Count;TcpStates=$tcpStates;TopTcpProcesses=$topTcp;TopUdpProcesses=$topUdp}
+ }
+ 
++function Get-InspectionArchiveMember($Entries,[string]$CanonicalName) {
++    if($CanonicalName -cnotin @('autorunsc64.exe','sigcheck64.exe')){throw 'Unexpected collector filename.'}
++    # Windows-equivalent names must be unique. Never extract an archive path.
++    $matches=@($Entries | Where-Object {[string]::Equals($_.FullName,$CanonicalName,[StringComparison]::OrdinalIgnoreCase)})
++    if($matches.Count -ne 1 -or $matches[0].Length -le 0 -or $matches[0].Length -gt 32MB){throw 'Collector archive member invalid, ambiguous, or too large.'}
++    return $matches[0]
++}
++function Test-InspectionCollectorMetadata([string]$Name,$Version) {
++    # Product resources can be shared by GUI/console builds. These are observed
++    # signed vendor family values, not an inference from the external filename.
++    $family=switch($Name){
++        'Autoruns' { @{OriginalFilename='autoruns.exe';ProductName='Sysinternals autoruns'} }
++        'Sigcheck' { @{OriginalFilename='sigcheck.exe';ProductName='Sysinternals Sigcheck'} }
++        default {return $false}
++    }
++    $parsedVersion=$null
++    return ($null -ne $Version -and [string]::Equals($Version.OriginalFilename,$family.OriginalFilename,[StringComparison]::OrdinalIgnoreCase) -and [string]::Equals($Version.ProductName,$family.ProductName,[StringComparison]::OrdinalIgnoreCase) -and [Version]::TryParse([string]$Version.FileVersion,[ref]$parsedVersion) -and $parsedVersion.Major -gt 0)
++}
++function Convert-InspectionStartupCsv([string]$Csv) {
++    $rows=@($Csv | ConvertFrom-Csv -ErrorAction Stop)
++    if($rows.Count -eq 0){throw 'Autoruns output empty or unsupported; no clean result inferred.'}
++    $required=@('Time','Entry Location','Entry','Enabled','Category','Profile','Description','Company','Image Path','Version','Launch String')
++    foreach($column in $required){if($rows[0].PSObject.Properties.Name -cnotcontains $column){throw 'Autoruns output schema unsupported; no clean result inferred.'}}
++    foreach($row in $rows){
++        [pscustomobject]@{Entry=$row.Entry;'Entry Location'=$row.'Entry Location';Enabled=$row.Enabled;Category=$row.Category;Description=$row.Description;Signer=if($row.PSObject.Properties.Name -ccontains 'Signer'){$row.Signer}else{'Not collected'};Company=$row.Company;'Image Path'=$row.'Image Path';Version=$row.Version;SignatureCoverage=if($row.PSObject.Properties.Name -ccontains 'Signer'){'Reported by source, not independently established'}else{'Not requested in metadata-only mode'}}
++    }
++}
+ function Get-VerifiedMicrosoftTool {
+     param([string]$Name,[string]$ArchiveUrl,[string]$BinaryName)
+-    $expected= switch($Name){'Autoruns'{'Autorunsc64.exe'}'Sigcheck'{'sigcheck64.exe'}default{throw 'Unsupported collector.'}}
+-    if($BinaryName -cne $expected){throw 'Unexpected collector filename.'}
++    $expected= switch($Name){'Autoruns'{'autorunsc64.exe'}'Sigcheck'{'sigcheck64.exe'}default{throw 'Unsupported collector.'}}
++    if(-not [string]::Equals($BinaryName,$expected,[StringComparison]::OrdinalIgnoreCase)){throw 'Unexpected collector filename.'}
++    $BinaryName=$expected
+     $uri = [uri]$ArchiveUrl
+     if ($uri.Scheme -ne 'https' -or $uri.Host -ne 'download.sysinternals.com' -or $uri.UserInfo) { throw 'Only official Sysinternals HTTPS acquisition is allowed.' }
+     if(-not $DownloadMicrosoftTools){throw 'Tool acquisition requires explicit -DownloadMicrosoftTools; no automatic download/cache execution.'}
+@@ -99,9 +127,8 @@
+     Invoke-WebRequest -Uri $ArchiveUrl -OutFile $toolArchive -TimeoutSec 40 -MaximumRedirection 0 -UseBasicParsing -ErrorAction Stop
+     $zip=[IO.Compression.ZipFile]::OpenRead($toolArchive)
+     try {
+-        $entries=@($zip.Entries | Where-Object {$_.FullName -ceq $BinaryName})
+-        if($entries.Count -ne 1 -or $entries[0].Length -gt 32MB){throw 'Collector archive member invalid or too large.'}
+-        [IO.Compression.ZipFileExtensions]::ExtractToFile($entries[0],$toolBinary,$false)
++        $member=Get-InspectionArchiveMember $zip.Entries $BinaryName
++        [IO.Compression.ZipFileExtensions]::ExtractToFile($member,$toolBinary,$false)
+     } finally {$zip.Dispose()}
+     [void](Assert-SimLocalPath $toolBinary -Leaf)
+     $verificationHandle=[IO.File]::Open($toolBinary,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+@@ -109,13 +136,13 @@
+     $signature = Get-AuthenticodeSignature -LiteralPath $toolBinary
+     if ($signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate -or $signature.SignerCertificate.GetNameInfo([Security.Cryptography.X509Certificates.X509NameType]::SimpleName,$false) -cne 'Microsoft Corporation' -or $signature.SignerCertificate.Subject -notmatch '(?:^|,\s*)O=Microsoft Corporation(?:,|$)') { throw ('Microsoft publisher validation failed for ' + $Name) }
+     $version=[Diagnostics.FileVersionInfo]::GetVersionInfo($toolBinary)
+-    if($version.OriginalFilename -notmatch ('^'+[regex]::Escape(($BinaryName -replace '64\.exe$',''))+'(?:64)?\.exe$') -or -not $version.FileVersion){throw 'Collector product/version metadata unsupported.'}
+-    [ordered]@{Name=$Name;Path=$toolBinary;SourceURL=$ArchiveUrl;RedirectsAllowed=$false;AcquiredAt=(Get-Date).ToString('o');VerifiedAt=(Get-Date).ToString('o');FileVersion=$version.FileVersion;OriginalFilename=$version.OriginalFilename;OutputEncodingContract='Strict UTF-16LE with BOM required';SignatureStatus=[string]$signature.Status;Signer=$signature.SignerCertificate.Subject;SHA256=(Get-FileHash -LiteralPath $toolBinary -Algorithm SHA256).Hash;HashMeaning='Recorded fingerprint; no trusted vendor expected hash available'}
++    if(-not (Test-InspectionCollectorMetadata $Name $version)){throw 'Collector product/version metadata unsupported.'}
++    [ordered]@{Name=$Name;Path=$toolBinary;SourceURL=$ArchiveUrl;RedirectsAllowed=$false;AcquiredAt=(Get-Date).ToString('o');VerifiedAt=(Get-Date).ToString('o');FileVersion=$version.FileVersion;OriginalFilename=$version.OriginalFilename;OutputEncodingContract=if($Name -eq 'Sigcheck'){'Strict UTF-16LE without BOM, observed verified Sigcheck contract'}else{'Strict UTF-16LE with BOM required'};SignatureStatus=[string]$signature.Status;Signer=$signature.SignerCertificate.Subject;SHA256=(Get-FileHash -LiteralPath $toolBinary -Algorithm SHA256).Hash;HashMeaning='Recorded fingerprint; no trusted vendor expected hash available'}
+     } finally {$verificationHandle.Dispose()}
+ }
+ 
+ function Invoke-InspectionTool {
+-    param([string]$Binary,[string[]]$Arguments,[int]$TimeoutSeconds=180,[string]$ExpectedHash='', [ValidateSet('','Ascii','Utf8','Utf16LE')][string]$OutputEncoding='')
++    param([string]$Binary,[string[]]$Arguments,[int]$TimeoutSeconds=180,[string]$ExpectedHash='', [ValidateSet('','Ascii','Utf8','Utf16LE','Utf16LENoBom')][string]$OutputEncoding='')
+     [void](Assert-SimLocalPath $Binary -Leaf)
+     if(-not ('SimBoundedProcess' -as [type])) {
+         Add-Type -TypeDefinition @'
+@@ -136,6 +163,9 @@
+             if(contract=="Utf16LE") {
+                 if(raw.Length>0 && (raw.Length<2||raw[0]!=255||raw[1]!=254)) throw new InvalidDataException(channel+" missing UTF-16LE BOM; output unavailable");
+                 encoding=new UnicodeEncoding(false,false,true); if(raw.Length>0) offset=2;
++            } else if(contract=="Utf16LENoBom") {
++                if(raw.Length>=2&&raw[0]==255&&raw[1]==254) throw new InvalidDataException(channel+" unexpected UTF-16LE BOM under no-BOM contract; output unavailable");
++                encoding=new UnicodeEncoding(false,false,true);
+             } else if(contract=="Utf8") {
+                 encoding=new UTF8Encoding(false,true);
+                 if(raw.Length>=3&&raw[0]==239&&raw[1]==187&&raw[2]==191) offset=3;
+@@ -181,7 +211,7 @@
+ }
+ '@
+     }
+-    if(-not $OutputEncoding){$OutputEncoding=if([IO.Path]::GetFileName($Binary) -match '^(autorunsc64|sigcheck64)\.exe$'){'Utf16LE'}else{'Ascii'}}
++    if(-not $OutputEncoding){$OutputEncoding=switch -Regex ([IO.Path]::GetFileName($Binary)){'^autorunsc64\.exe$'{'Utf16LE';break}'^sigcheck64\.exe$'{'Utf16LENoBom';break}default{'Ascii'}}}
+     [SimBoundedProcess]::Run($Binary,$Arguments,$TimeoutSeconds,$OutputEncoding,$ExpectedHash)
+ }
+ function Invoke-InspectionNative([string]$Name,[string[]]$Arguments) {
+@@ -317,9 +347,7 @@
+     if((Get-FileHash -LiteralPath $autorunsTool.Path).Hash -cne $autorunsTool.SHA256){throw 'Collector changed since verification.'}
+     # Omit -s/-h: collect startup metadata first; only guarded local files get followups.
+     $csv = Invoke-InspectionTool $autorunsTool.Path @('-accepteula','-nobanner','-a','*','-c') -ExpectedHash $autorunsTool.SHA256
+-    $rows = @($csv | ConvertFrom-Csv)
+-    if ($rows.Count -eq 0 -or -not ($rows[0].PSObject.Properties.Name -contains 'Signer')) { throw 'Autoruns output could not be parsed; no clean result was inferred.' }
+-    $rows | Select-Object Entry,'Entry Location',Enabled,Category,Description,Signer,Company,'Image Path',Version
++    Convert-InspectionStartupCsv $csv
+ }
+ $inspectionReport.SignatureFollowups = Get-InspectionSection 'Sigcheck review of accessible unverified startup files' {
+     if (-not $sigcheckTool) { throw 'Verified Sigcheck was unavailable.' }
+--- a/Tests/Test-SimCleaner.ps1
++++ b/Tests/Test-SimCleaner.ps1
+@@ -250,6 +250,34 @@
+ Case 'No VirusTotal flags added' {Assert ($inspector -notmatch "'-(v|vs|vt)'" )}
+ Case 'Launchers preserve exit and avoid PATH search' {foreach($file in Get-ChildItem $kitPath -Filter '*.cmd'){$text=Get-Content $file.FullName -Raw;Assert ($text -match 'setlocal' -and $text -match 'exit /b %inspection_exit%' -and $text -notmatch 'where pwsh|set .*pwsh.exe')}}
+ 
++Case 'Official lowercase Autoruns member accepted' {$m=Get-InspectionArchiveMember @([pscustomobject]@{FullName='autorunsc64.exe';Length=1460024}) 'autorunsc64.exe';Assert ($m.FullName -ceq 'autorunsc64.exe')}
++Case 'Windows-equivalent case variant accepted uniquely' {$m=Get-InspectionArchiveMember @([pscustomobject]@{FullName='Autorunsc64.exe';Length=1460024}) 'autorunsc64.exe';Assert ($m.FullName -ceq 'Autorunsc64.exe')}
++Case 'Case-colliding collector members rejected' {MustThrow {Get-InspectionArchiveMember @([pscustomobject]@{FullName='autorunsc64.exe';Length=1},[pscustomobject]@{FullName='Autorunsc64.exe';Length=1}) 'autorunsc64.exe'} 'ambiguous'}
++Case 'Subdirectory collector member rejected' {MustThrow {Get-InspectionArchiveMember @([pscustomobject]@{FullName='folder/autorunsc64.exe';Length=1}) 'autorunsc64.exe'} 'invalid'}
++Case 'Traversal collector member rejected' {MustThrow {Get-InspectionArchiveMember @([pscustomobject]@{FullName='../autorunsc64.exe';Length=1}) 'autorunsc64.exe'} 'invalid'}
++Case 'Oversize collector member rejected' {MustThrow {Get-InspectionArchiveMember @([pscustomobject]@{FullName='autorunsc64.exe';Length=33554433}) 'autorunsc64.exe'} 'too large'}
++Case 'Empty collector member rejected' {MustThrow {Get-InspectionArchiveMember @([pscustomobject]@{FullName='autorunsc64.exe';Length=0}) 'autorunsc64.exe'} 'invalid'}
++Case 'Unapproved canonical collector name rejected' {MustThrow {Get-InspectionArchiveMember @([pscustomobject]@{FullName='other.exe';Length=1}) 'other.exe'} 'Unexpected'}
++
++Case 'Observed Autorunsc shared GUI original filename accepted' {Assert (Test-InspectionCollectorMetadata Autoruns ([pscustomobject]@{OriginalFilename='autoruns.exe';ProductName='Sysinternals autoruns';FileVersion='14.3'}))}
++Case 'Observed signed Sigcheck family accepted' {Assert (Test-InspectionCollectorMetadata Sigcheck ([pscustomobject]@{OriginalFilename='sigcheck.exe';ProductName='Sysinternals Sigcheck';FileVersion='2.92'}))}
++Case 'Collector wrong original filename rejected' {Assert (-not (Test-InspectionCollectorMetadata Autoruns ([pscustomobject]@{OriginalFilename='cmd.exe';ProductName='Sysinternals autoruns';FileVersion='14.3'})))}
++Case 'Collector wrong product rejected' {Assert (-not (Test-InspectionCollectorMetadata Autoruns ([pscustomobject]@{OriginalFilename='autoruns.exe';ProductName='Other';FileVersion='14.3'})))}
++Case 'Collector missing version rejected' {Assert (-not (Test-InspectionCollectorMetadata Autoruns ([pscustomobject]@{OriginalFilename='autoruns.exe';ProductName='Sysinternals autoruns';FileVersion=''})))}
++Case 'Collector invalid version rejected' {Assert (-not (Test-InspectionCollectorMetadata Autoruns ([pscustomobject]@{OriginalFilename='autoruns.exe';ProductName='Sysinternals autoruns';FileVersion='garbage'})))}
++Case 'Collector null metadata rejected' {Assert (-not (Test-InspectionCollectorMetadata Autoruns $null))}
++
++Case 'Actual metadata-only Autoruns schema accepted without signer' {
++ $csv="Time,Entry Location,Entry,Enabled,Category,Profile,Description,Company,Image Path,Version,Launch String`n0,local,Synthetic,true,Logon,local,description,company,C:\fixture\safe.exe,1.0,SYNTHETIC_SECRET"
++ $rows=@(Convert-InspectionStartupCsv $csv);Assert ($rows.Count -eq 1 -and $rows[0].Signer -ceq 'Not collected' -and $rows[0].SignatureCoverage -match 'Not requested');Assert (($rows|ConvertTo-Json) -notmatch 'SYNTHETIC_SECRET|Launch String|Profile')
++}
++Case 'Autoruns optional reported signer preserved without safety inference' {
++ $csv="Time,Entry Location,Entry,Enabled,Category,Profile,Description,Company,Image Path,Version,Launch String,Signer`n0,local,Synthetic,true,Logon,local,description,company,C:\fixture\safe.exe,1.0,SYNTHETIC_SECRET,(Verified) Synthetic"
++ $r=@(Convert-InspectionStartupCsv $csv)[0];Assert ($r.Signer -ceq '(Verified) Synthetic' -and $r.SignatureCoverage -match 'not independently')
++}
++Case 'Autoruns missing required columns rejected' {MustThrow {Convert-InspectionStartupCsv "Entry,Signer`nSynthetic,unknown"} 'schema unsupported'}
++Case 'Autoruns empty output rejected without clean inference' {MustThrow {Convert-InspectionStartupCsv ''} 'empty or unsupported'}
++
+ # Exercise bounded process wrapper only against a reviewed inert PowerShell fixture.
+ # Current host executable is used explicitly; no collector/scan entry point runs.
+ $runtime=(Get-Process -Id $PID).Path
+@@ -260,6 +288,9 @@
+  Assert ($message -match 'decoding failed under Utf8' -and $message -notmatch 'cap exceeded|�')
+ }
+ Case 'Strict UTF16LE accepts BOM and Unicode fixture' {$r=Invoke-InspectionTool $runtime @('-NoProfile','-NonInteractive','-Command','$s=[Console]::OpenStandardOutput();$b=[byte[]]@(255,254)+[Text.Encoding]::Unicode.GetBytes("fixture café");$s.Write($b,0,$b.Length)') 10 -OutputEncoding Utf16LE;Assert ($r -eq 'fixture café')}
++Case 'Verified Sigcheck no-BOM contract accepts strict UTF16LE Unicode' {$r=Invoke-InspectionTool $runtime @('-NoProfile','-NonInteractive','-Command','$s=[Console]::OpenStandardOutput();$b=[Text.Encoding]::Unicode.GetBytes("fixture café");$s.Write($b,0,$b.Length)') 10 -OutputEncoding Utf16LENoBom;Assert ($r -eq 'fixture café')}
++Case 'No-BOM UTF16LE rejects odd malformed byte sequence' {MustThrow {Invoke-InspectionTool $runtime @('-NoProfile','-NonInteractive','-Command','$s=[Console]::OpenStandardOutput();$s.Write([byte[]]@(65),0,1)') 10 -OutputEncoding Utf16LENoBom} 'decoding failed under Utf16LENoBom'}
++Case 'No-BOM UTF16LE does not silently accept a changed BOM contract' {MustThrow {Invoke-InspectionTool $runtime @('-NoProfile','-NonInteractive','-Command','$s=[Console]::OpenStandardOutput();$s.Write([byte[]]@(255,254,65,0),0,4)') 10 -OutputEncoding Utf16LENoBom} 'unexpected UTF-16LE BOM'}
+ Case 'Unknown UTF16 without BOM unavailable' {MustThrow {Invoke-InspectionTool $runtime @('-NoProfile','-NonInteractive','-Command','[Console]::OutputEncoding=[Text.Encoding]::UTF8;[Console]::Write("fixture")') 10 -OutputEncoding Utf16LE} 'missing UTF-16LE BOM'}
+ Case 'Malformed UTF16 rejected without silent replacement' {MustThrow {Invoke-InspectionTool $runtime @('-NoProfile','-NonInteractive','-Command','$s=[Console]::OpenStandardOutput();$s.Write([byte[]]@(255,254,65),0,3)') 10 -OutputEncoding Utf16LE} 'decoding failed under Utf16LE'}
+ Case 'Early decoding stream fault keeps decoding classification while child lives' {MustThrow {Invoke-InspectionTool $runtime @('-NoProfile','-NonInteractive','-Command','$s=[Console]::OpenStandardOutput();$s.Write([byte[]]@(255),0,1);$s.Close();Start-Sleep -Seconds 2') 10 -OutputEncoding Utf8} 'decoding failed under Utf8'}

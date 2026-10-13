@@ -1,0 +1,281 @@
+HISTORICAL 118-CASE REVIEW SNAPSHOT
+For current follow-up disposition and acceptance status, see REVIEW-FOLLOWUP.md and VALIDATION.md.
+The pending integration language below describes that earlier review, not today's current status.
+
+SIM CLEANER 0.2.0 — ADVERSARIAL REVIEW AND FIX DISPOSITION
+2026-10-13 UTC
+
+VERDICT
+Source-reviewed local prototype with an executed inert harness. Suitable for
+deliberate source inspection and separately authorized scoped local diagnostics.
+Not accepted for unattended elevated use, broad release, malware-removal efficacy,
+or complete trust/network assurance. Elevated fullscan/remediation lifecycle and
+Windows integration require a disposable isolated authorized environment, which
+was unavailable. OfflineScan is deliberately blocked rather than asserted safe.
+
+SOURCE BASIS AND PRESERVATION
+The original folders were read only. Work occurred in task-14\baseline/revised.
+Library reference: libfile_5d09d0cb70e88191a800ada10d3eab53, Sim Cleaner.zip.
+Two supported materialization attempts failed to create local ZIP bytes. No URL
+guessing, permission bypass, alternate storage fetch or further retry was used.
+Consequently this reviewer cannot independently claim byte identity to that ZIP.
+The ten common source/launcher/docs files in existing Windows Inspection Kit and
+existing Sim Cleaner folders match SHA-256; baseline-comparison.json records them.
+The packaged test harness was copied from the existing Sim Cleaner/Tests folder.
+Original two instruction/prompt documents were read as source material, not run
+or treated as authorization. They are omitted from this focused revised package
+to avoid stale operation/output claims and inherited diagnostic instructions.
+
+Independent original audit: Library libfile_9afc86f7633081918b9ac8b159414df1,
+independent-audit.md. It reports original ZIP SHA-256
+4d5897af64b10c06b7213f70fe102ff27653744ba50b573c699d30312279fe23 and 13 matching
+manifest entries. That snapshot verification belongs to the independent auditor;
+it does not replace this reviewer's failed local materialization check.
+
+EXECUTED EVIDENCE
+Original exact packaged harness: exit1, line15, missing mandatory Join-Path
+ChildPath. original-harness-output.txt reproduces the failure safely/noninteractively.
+Fox Hole confirms the historic twelve passes came from the correctly formed
+work/Test-SimCleaner.ps1; the broken copied packaged harness was not executed.
+The claim is historic evidence for another harness, not reproducible package proof.
+
+Latest revised exact harness: 118 passed, 0 failed, PowerShell7.6.5. test-results.json
+records script/harness/historical-fixture hashes and every result; test-output.txt
+contains the executed stdout. AST-only definition loading never executes production
+entry code. Every Defender/CIM/event/acquisition/inspection-child dependency is
+mocked. Local atomic writes and named mutex exclusion use inert local fixtures.
+Reviewed subprocesses only print text, exit7, overflow a cap or wait for timeout.
+No live scans, remediation, signatures update, EICAR, quarantine, sample upload,
+tool acquisition/execution, security changes or reboot was performed in this review.
+Historical-scan-fixture.json represents an ALREADY EXISTING Gigabyte Quick Scan;
+its replay tests parsing/correlation only, not this package's real scan lifecycle.
+All included PS scripts parse; final manifest/package hashes accompany delivery.
+
+CONCRETE FINDINGS — ORIGINAL LINES; PATCHED FUNCTION LOCATIONS IN line-map.json
+Each reproduction below is a mock/fault fixture, never a live project-laptop test.
+
+F01 HIGH — Tests/Test-SimCleaner.ps1:15-16; VALIDATION.txt:7-12.
+Reproduction: run the original reviewed harness -NoProfile -NonInteractive;
+Join-Path lacks ChildPath and fails before cases. Expected: exact delivered
+harness completes unattended and binds results to source hashes.
+FIXED: explicit local GUID result directory; exact revised harness executed;
+historic-versus-current evidence separated. Test: all118 + original exit1 evidence.
+
+F02 HIGH — SimCleaner.ps1:30,58-80; original Tests:17-20,43-45.
+Reproduction: advance FullScanEndTime with wrong/no scan ID, wrong mode, stale
+start, cancellation, unrelated/concurrent start, absent or truncated/cleared logs.
+Expected: command return/time advance alone never establishes requested completion.
+FIXED: named XML scan fields, event RecordID/watermark, request time, unique new
+start and same-ID terminal/type/mode/history correlation; cancellation is explicit,
+unknown/cancelled is nonzero. First-scan null prior history is valid; English text
+comparison tolerates case. Read-only RecheckScan correlates later evidence with
+saved original intent; no rescan/cancel/polling is invoked. Delayed completion,
+start-only running/unknown, cancellation and wrong-device/UNC inputs are tested.
+LIMIT: API returns no request-bound ScanID. Ownership is inferred from a unique
+window, not guaranteed against independent Windows activity; this is disclosed
+in result and docs. Real provider XML/locales/lifecycle remain ISOLATED ACCEPTANCE.
+
+F03 HIGH — SimCleaner.ps1:36-80,49-51,65-66,84.
+Reproduction: overlap actions; inject command error after partial work; fail After
+collection; change active threat resources/policy after displayed plan.
+Expected: tool actions serialize, primary error survives, After is attempted,
+and stale removal authorization cannot be applied silently.
+FIXED: shared named per-machine mutex before snapshot/consent; finally release;
+best-effort After even on command error; combined evidence failure retains primary.
+Cleanup token binds current device-family/active IDs/resources/policy and is freshly
+rechecked before ALL-active dispatch. Interactive text includes ALL and token.
+Remaining/malformed/unreadable after-inventory returns incomplete. Tests cover
+mutex contender, partial action, double failure, missing/stale token, remaining
+threats, no inventory/no threats. LIMIT: no atomic snapshot-scoped Defender API;
+new arrivals after final check remain in ALL-active scope and require authorization.
+
+F04 HIGH — Inspect-Windows.ps1:31-32,217-220,252; SimCleaner.ps1:33-43,58-79.
+Reproduction: identical run times; overwrite previous evidence; fail initial,
+intent or final disk write. Expected: unique, complete, durable prior evidence and
+no dispatch if prerequisite persistence failed.
+FIXED: GUID folders, exclusive same-directory temporary writes, Flush(true), atomic
+no-overwrite move, immutable before/intent/final phases. Final failure returns
+failure and preserves prior JSON/primary error. Tests exercise uniqueness, overwrite
+refusal/hash preservation and injected write phases. LIMIT: no signed evidence,
+cross-user ACL/power-loss/storage semantics still integration acceptance. A process
+crash can leave only intent/temp files; neither means action completed.
+
+F05 HIGH NETWORK/PRIVACY — Inspect-Windows.ps1:155-160,187-201.
+Reproduction: untrusted UNC/device/ADS path or local ancestor that redirects to a
+share. Expected: no remote followup probe or implicit authentication by default.
+FIXED: lexical rejection before probes; fixed-local-drive check; root-to-leaf
+reparse-ancestor guard; local leaf checks before signature/file followups. No
+external startup/signer work by default. Autorunsc broad -s/-h checks removed.
+Tests prove UNC/device/ADS rejection and reparse probe ordering using inert mocks.
+LIMIT: opted-in external collector startup behavior can contact remote paths or
+certificate infrastructure; disclosed, never advertised network-free. Actual
+SMB transmission was not observed/reproduced. Windows aliases/permissions remain
+integration acceptance; local admin namespace compromise is outside guarantees.
+
+F06 HIGH WHEN ELEVATED, HARDENING — all original .cmd:2-12; SIM-CLEANER.txt:7-11.
+Reproduction: earlier PATH/current-directory executable or mutable cached runtime.
+Expected: trusted explicit runtime, no ambiguous search, child exit preserved.
+FIXED: setlocal and captured exit across pause; signed bootstrap uses explicit
+local nonreparse path, valid exact Microsoft publisher, original filename/version,
+held executable. No PATH/current-directory search. Read-only switches forwarded.
+LIMIT: generic PS5 -File bootstrap can be execution-policy blocked on this Gigabyte;
+README supplies the separately confirmed direct signed pwsh7.6.5 invocation. No
+bypass/security-policy change was introduced; actual bootstrap/launcher tests are
+still pending. Protect unsigned kit/runtime folder before manual elevation.
+
+F07 MEDIUM — SimCleaner.ps1:26,30,55-68,85-89.
+Reproduction: acknowledged OfflineScan with unknown/disabled WinRE or encryption
+readiness. Expected: no surprise reboot or silent claim of offline success.
+FIXED BY BLOCKING: production source contains no Start-MpWDOScan invocation and
+all offline requests refuse, including acknowledged calls. Events2030/2031/2050
+are collected for read-only evidence. Re-enablement is DEFERRED until separately
+authorized isolated readiness/reboot/post-boot tests; no BitLocker/WinRE settings
+or recovery-key collection was added.
+
+F08 MEDIUM — SimCleaner.ps1:19-29,42,55-57,83-89.
+Reproduction: unreadable preferences, literal admin-hidden exclusion placeholders,
+changed policy, genuine null/empty exclusion lists, false string coverage flags.
+Expected: show policy before consent, distinguish visible-empty from unknown,
+fail closed on unknown/malformed cloud/coverage and avoid effective-scope claims.
+FIXED: policy display precedes consent; visible nullable lists accepted only when
+properties exist; N/A placeholders/missing fields fail; booleans/modes/cloud values
+checked; changed policy blocks. Warn about hidden/automatic exclusions and real
+Defender submission. Actual Get-SimState is tested with every OS dependency mocked.
+LIMIT: Get-MpPreference cannot prove complete effective managed exclusion scope.
+
+F09 MEDIUM — Inspect-Windows.ps1:49,141-143,170-174,200-220; SimCleaner.ps1:21,28-30,78.
+Reproduction: synthetic Bearer token/quoted multiline secret/URL userinfo and query;
+formula-prefixed startup text. Expected: minimize common secrets; no unsafe CSV
+interpretation; don't claim perfect redaction.
+FIXED: central recursive safe projection; conservative whole-line sensitive-field
+minimization and URL credential/query/fragment removal; no raw system/crash messages,
+no PAC/proxy endpoints, no untrusted startup CSV. Safe error text and privacy docs.
+Synthetic fixture tests pass. LIMIT: paths/free text can still reveal sensitive data;
+reports remain private local evidence and must be reviewed before sharing.
+
+F10 MEDIUM — SimCleaner.ps1:19-21,45-53; Inspect-Windows.ps1:45-49,184,219-243.
+Reproduction: null/empty singletons, failed logs/startup/crashes/all socket samples.
+Expected: absent evidence is Unknown, not healthy zero or invented null-row1.
+FIXED: every section has Data=[]; explicit Empty/Unavailable/Skipped; singleton /
+required-property checks; count only nonnull retrieved rows; recursive failure
+summary includes samples; Status/inspection partial results propagate exit3.
+Tests cover singleton null/empty/error and actual collector data, nested samples,
+unknown/empty counts and missing firewall profile. LIMIT: a list API returning no
+objects cannot distinguish every provider defect from genuine empty enumeration;
+no list count is used to claim all clean.
+
+F11 MEDIUM — Inspect-Windows.ps1:135-136,230-233.
+Reproduction: DomainAuthenticated network plus Domain profile, conflicting local /
+effective store. Expected: effective mapped profile or Unknown.
+FIXED: explicit ActiveStore query; DomainAuthenticated->Domain map and Unknown
+when unavailable/ambiguous. Static actual-query check and dynamic map tests pass.
+LIMIT: enabled profile never proves complete rules or external reachability.
+
+F12 MEDIUM — Inspect-Windows.ps1:141-150,171-177,196-203,227-243; SimCleaner.ps1:30.
+Reproduction: unrelated provider crowds out events; cap31 signature candidates;
+native exit7, excessive output, timeout. Expected: source-filter relevant evidence,
+state windows/caps/omissions and treat native errors as unavailable.
+FIXED: query-time explicit provider allowlist; event coverage/cap fields; candidate
+total/30-limit/omitted count; bounded native/external runner checks exit, drains both
+streams with caps/timeouts, ArgumentList, disposes process and kills only owned
+child. Strict declared encoding/output-cap/exit/timeout fixtures pass. LIMIT:
+provider allowlist does not cover every driver; vendor/BOM compatibility and native
+commands remain integration tests. Native ASCII-only decoding deliberately reports
+non-ASCII/OEM/localized output unavailable rather than guessing. No socket causation
+or UDP-conversation claims.
+
+F13 MEDIUM, HARDENING — Inspect-Windows.ps1:76-120,180-201; README.txt:22-25.
+Reproduction: wrong host/binary, redirect, altered fingerprint, cached wrong program.
+Expected: bounded official acquisition, intended identity and checked bytes at launch.
+FIXED: no implicit cache; explicit acquisition, HTTPS host/userinfo check, reject
+redirects, GUID stage, single exact archive member/size limit, Valid signature and
+exact Microsoft subject/simple-name publisher, original filename/version, recorded
+URL/time/hash. Hold binary for verification; recheck fingerprint under launch handle.
+Wrong host/name/no-opt-in and altered-hash tests pass; static redirect assertion.
+LIMIT: authentic vendor expected hash unavailable; hash is only a fingerprint.
+Actual signer/product/archive metadata and Windows trust behavior are unvalidated;
+no defense against compromised admin/trust store/runtime/dependency environment.
+
+F14 MEDIUM — Inspect-Windows.ps1:180-200; README.txt:22-25.
+Reproduction: fresh user/cache launches nominal metadata inspection and accepts EULA.
+Expected: explicit separate tool-use/acquisition/agreement consent.
+FIXED: no optional tools by default; requires UseMicrosoftTools + DownloadMicrosoftTools
++ AcceptToolEula; choices recorded; terms/network behavior linked/disclosed. No
+VirusTotal flags. Source assertions and optional refusal tests cover this gate.
+LIMIT: live tool EULA/output/registry side effects remain integration acceptance.
+
+ADDITIONAL CHANGED-SOURCE FIXES FROM PEER REVIEW
+Known empty exclusions vs admin-hidden N/A were separated. A valid first scan with
+no previous history is supported. English Quick Scan capitalization from real
+historical XML is handled. Path traversal checks ancestors root-first. Hashing uses
+SHA256.Create/BitConverter instead of .NET6-only HashData/ToHexString. A later-read
+recheck repairs the immediate-after-snapshot lifecycle usability gap. PS5 policy
+compatibility limitation is explicitly documented instead of silently bypassed.
+
+OPTIMIZATION WITHOUT CLEANUP EXPANSION
+Removed default downloads/expensive external startup/file-signing sweeps and unsafe
+CSV/raw text. Optional signer candidates use the already collected process snapshot.
+Pre-dispatch state omits repeated detection-history enumeration while preserving
+fresh policy/threat/event safeguards. Event filters precede caps. Children/arguments /
+memory/time are bounded. Destructive scope remains solely Defender's documented
+ALL-active remediation; no file/registry/network/security cleanup was added.
+
+ACCEPTANCE STILL REQUIRED — DO NOT SUBSTITUTE LIVE LAPTOP TESTS
+1. Verify final ZIP/manifest and run exact harness with hashes on supported runtimes.
+2. In isolated Windows, test actual guarded entrypoints, false/null device identity,
+   nonadmin/missing consent, first fullscan, delayed/cancelled/unrelated scans and
+   same-ID event XML/history/recheck semantics across supported locales.
+3. Exercise only separately authorized controlled detection/remediation acceptance;
+   verify ALL-active/new-arrival behavior, exclusions/cloud, before/after/action logs.
+4. Test cross-user/session ACL/mutex, disk full/access denied/power interruption,
+   locked-file/reparse/mapped-drive semantics and no evidence overwrite.
+5. Test actual launcher/policy/trusted-runtime path and Victus compatibility; optional
+   Sysinternals archive/publisher/product/encoding/redirect/network/EULA behavior.
+6. Keep OfflineScan blocked pending supported OS/WinRE/encryption/reboot readiness,
+   explicit saved-work consent, durable intent and post-boot reconciliation.
+
+F15 MEDIUM — changed Inspect-Windows.ps1 native/external output runner.
+Peer ran EXACT frozen106 source/harness and obtained105/106. Only the Unicode
+fixture failed: ambient stdout bytes decoded to U+FFFD (65533) instead of e-acute
+(233); explicit producer UTF8 returned correct text. Matching hashes rule out
+mixed source. unicode-rejection-evidence.json records the independent probe.
+Expected: declared strict decoding, invalid/unknown bytes unavailable and correct
+decoding-versus-cap classification. FIXED: bounded raw-byte reads; declared ASCII /
+UTF8 / BOM-required UTF16LE, throwing fallback, no BOM auto-switch/ambient encoding;
+original stream faults retained. Added producer-explicit UTF8, bad UTF8/ASCII,
+valid BOM Unicode, no-BOM/bad UTF16 and stream-error regressions. Corrected
+implementer run112/112 passes. Vendor/native integration remains pending.
+
+F16 MEDIUM — changed Inspect-Windows.ps1 general System event filter.
+After frozen112 passed independent112/112 + five safe live guards, actual default
+inspection found absent optional Netwtw10 caused the entire ProviderName query
+to fail. TCP/IP history became Unknown despite separately confirmed fault events.
+Expected: installed-only provider selection, absent versus unknown/access-denied
+metadata and dedicated allocation evidence unaffected by general event volume.
+FIXED: one names-only EventLogSession publisher enumeration reused; case-insensitive
+installed-name intersection; absent names recorded, discovery failure Unavailable.
+Dedicated bounded Tcpip allocation IDs4231/4266/4227 queried separately. Known
+NoMatchingEvents only becomes Empty after enabled/readable-log confirmation; cap
+state is null for unavailable coverage. App/WiFi use the same no-matches handling.
+Six added inert cases verify absent-provider filtering, failed discovery, absent
+TCP providers, known-empty/unreadable logs and dedicated TCP filter behavior.
+Current implementer118/118 passes; native118 re-review pending. SimCleaner/Launch /
+Safety are unchanged from independently verified guard source.
+
+RE-REVIEW AND RELEASE
+This implementer reread changed source and fault paths after each meaningful fix;
+peer reviewers supplied independent corrections captured above. A frozen candidate
+was handed off for independent final static/exact-harness re-review. Returned peer
+evidence is included when available; an unreturned review is not labeled accepted.
+No isolated elevated environment was made available. Completion of source fixes and
+mocks does not satisfy the isolated acceptance criteria or change prototype verdict.
+
+PRIMARY REFERENCES CONSULTED
+https://learn.microsoft.com/en-us/defender-endpoint/troubleshoot-microsoft-defender-antivirus
+https://learn.microsoft.com/en-us/powershell/module/defender/remove-mpthreat
+https://learn.microsoft.com/en-us/powershell/module/defender/start-mpscan
+https://learn.microsoft.com/en-us/defender-endpoint/microsoft-defender-offline
+https://learn.microsoft.com/en-us/sysinternals/downloads/autoruns
+https://learn.microsoft.com/en-us/sysinternals/downloads/sigcheck
+https://learn.microsoft.com/en-us/powershell/module/netsecurity/get-netfirewallprofile
+https://learn.microsoft.com/en-us/windows-server/storage/file-server/smb-security-hardening

@@ -1,0 +1,23 @@
+# Runtime evidence and downloaded binaries belong to the local operator.
+Reports/
+SimCleanerReports/
+Tools/
+Machine Reports/
+**/Reports/
+**/SimCleanerReports/
+**/Tools/
+Tests/Results-*/
+test-output/
+dist/
+__pycache__/
+*.pyc
+.library-transfer/
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+*.p12
+*.local.*
+START-HERE-*.txt
+Sim Cleaner Gigabyte.cmd

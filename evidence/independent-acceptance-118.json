@@ -1,0 +1,44 @@
+{
+  "Date": "2026-10-12",
+  "Device": "GIGABYTE G6 KF",
+  "ArchiveSHA256": "403a147f239da2a1d8faaaefe20113fb8c3a2b4a22790f95163b3f0a9fccee2e",
+  "ManifestEntries": 24,
+  "IndependentInertTests": {
+    "Failed": 0,
+    "Passed": 118
+  },
+  "NativeInspector": {
+    "AbsentOptionalProviders": [
+      "WHEA-Logger",
+      "Netwtw10"
+    ],
+    "TcpAllocationEvents": "Retrieved",
+    "TcpAllocationFailureCount": 8,
+    "SystemEvents": "Retrieved",
+    "UnavailableSections": [],
+    "ExitCode": 0
+  },
+  "Limits": [
+    "No real elevated antivirus scan/remediation/offline scan performed.",
+    "Inert tests and read-only inventory do not establish malware-detection/removal efficacy.",
+    "Optional advanced integration still pending."
+  ],
+  "SourceHashes": [
+    {
+      "File": "Inspect-Windows.ps1",
+      "SHA256": "250571E6EF0AC395AE18485A1156BD0DD86355A691CED699A211C9546EA7BEBF"
+    },
+    {
+      "File": "Launch-SimCleaner.ps1",
+      "SHA256": "D0486C577B390D4AFBABDD65304F700AE8C6E15950F21DBC297E717E84E32893"
+    },
+    {
+      "File": "Safety.ps1",
+      "SHA256": "09B00F50C1F5FB6EB7C2AF03C5B8436C6096120A06CEB848063165F7FFCCB4F2"
+    },
+    {
+      "File": "SimCleaner.ps1",
+      "SHA256": "2E519810E02F76FED93C96D27108AA29F28E2FFCC891433011B272F133987001"
+    }
+  ]
+}

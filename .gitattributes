@@ -1,0 +1,2 @@
+# Preserve reviewed source fingerprints through checkout; no EOL conversion.
+* -text

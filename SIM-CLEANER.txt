@@ -1,0 +1,75 @@
+SIM CLEANER 0.2.0
+
+AVAILABLE ACTIONS
+Inspect: native Windows metadata child; propagates partial/failure exit.
+Status: read-only Defender/policy/threat/detection/event snapshot.
+CleanupPlan: snapshot with review token, active resources and ALL-active scope.
+RecheckScan: read-only correlation of a saved scan intent against later evidence.
+FullScan / QuickScan: Defender mode request; automatic Defender remediation and
+cloud/sample policy apply. Both require actual elevation, visible known policy,
+explicit consent, a fresh unchanged policy snapshot and usable idle-scan evidence.
+UpdateSignatures: requires elevation, known policy and explicit impact consent.
+Remediate: Remove-MpThreat affects ALL active threats at execution, including new
+arrivals. Requires elevation, consent and matching fresh reviewed-plan token.
+OfflineScan: BLOCKED in this prototype. WinRE/BitLocker/reboot readiness and durable
+post-boot reconciliation have not been validated in an isolated environment.
+
+Menu consent happens AFTER the preflight snapshot and actual visible exclusions /
+coverage flags / SubmitSamplesConsent / MAPSReporting are displayed. Hidden or
+automatic managed exclusions may still apply. Missing/admin-hidden preferences
+block mutations; genuine nullable empty visible-exclusion lists are accepted.
+The menu requires exact action text. Remediate requires 'Remediate ALL TOKEN'.
+
+For deliberate CLI mutation, -AcknowledgeImpact must follow an independent human
+review of the action/policy. Remediate also requires -ReviewedPlanToken TOKEN from
+a freshly reviewed CleanupPlan. Tokens bind device family, active IDs/resources
+and policy; they are change detectors, not authentication. Inventory/policy is
+rechecked immediately before dispatch. Defender has no atomic snapshot-scoped
+Remove-MpThreat API. New threats can arrive after the final check; this unavoidable
+ALL-active scope must be specifically authorized. No arbitrary deletion, registry
+cleaning, quarantine restoration, exclusion changes or security-policy reset exists.
+
+EVIDENCE AND FAILURE
+Each action uses a GUID folder in SimCleanerReports. Immutable atomic files:
+  01-before.json — persisted snapshot before authorization/dispatch
+  02-intent.json — fresh pre-dispatch state/intent; mandatory before mutation
+  03-final.json  — after-state, correlation/result/errors, finish time
+Read-only/refused runs normally have before/final only. Before/intent failures
+prevent dispatch. After-state is attempted even on command failure. Final-write
+failure returns failure and preserves earlier files plus the primary action error.
+Evidence is locally editable; it is neither signed nor cryptographically authentic.
+
+A machine-wide named mutex serializes this kit's actions/inspection across copies.
+It does not control Windows/scheduled Defender activity or hostile administrators.
+Known unresolved scan starts, unavailable/truncated event evidence block new scans.
+
+Completion requires a unique new 1000 start, same-ID 1001 completion, matching mode /
+type, no same-ID 1002 cancellation and matching advanced start/end history. Case
+differences in English 'Quick Scan'/'Full Scan' are accepted; unsupported localized
+fields remain Unverified. A first scan can have absent prior history. Unrelated,
+concurrent, stale, cleared, missing or truncated evidence never proves completion.
+The command's return alone is insufficient. This version collects an immediate
+after-snapshot; delayed events/async work remain Unverified and exit nonzero.
+It has no automatic rescan, global cancellation or unattended polling observer.
+To recheck the ORIGINAL saved scan later without dispatching another action:
+  .\SimCleaner.ps1 -ExpectedDevice Gigabyte -Action RecheckScan -ScanRunDirectory 'C:\absolute\kit\SimCleanerReports\Gigabyte-GUID'
+Use the confirmed runtime explicitly as described in README. Menu option9 offers
+the same read-only recheck. The original 02-intent.json must exist, have a matching
+device/action/schema, and retain usable pre-dispatch evidence. The recheck saves
+a new folder with source-intent fingerprint and correlated current evidence.
+Still-running/missing/delayed/unreadable/expired logs remain Unverified; never
+rerun a scan just to obtain an exit0. Seven-day/4096-event limits still apply.
+Local intent can be edited, and Defender does not return a request-bound Scan ID;
+ownership is inferred from the unique event window, not guaranteed against
+independent Windows activity. No claim of exclusive causal ownership is made.
+
+CLI exit 0: operation-specific result obtained (still inspect its limitations).
+CLI exit 1: guard/command/unknown scan/cancelled scan/storage failure.
+CLI exit 3: partial read-only evidence; menu retains any encountered failure.
+No exit code means malware absent or every threat removed. Remediation remaining
+active/malformed/unreadable after-inventory is incomplete/failure. A zero remaining
+count is only the retrieved Defender inventory, not efficacy or all-clean evidence.
+
+FullScan means Defender FullScan mode under existing exclusions and policies.
+It does not cover every byte, remote/removable share, encrypted archive, firmware
+or unknown malware. No engine/detection-efficacy claims are made.

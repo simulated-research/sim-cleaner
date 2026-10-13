@@ -1,0 +1,52 @@
+{
+  "Scope": "Inert console-output fixtures only",
+  "Runtime": "7.6.5",
+  "PlainOutput": "fixture caf�",
+  "PlainCodePoints": [
+    102,
+    105,
+    120,
+    116,
+    117,
+    114,
+    101,
+    32,
+    99,
+    97,
+    102,
+    65533
+  ],
+  "ExplicitUTF8Output": "fixture café",
+  "ExplicitUTF8CodePoints": [
+    102,
+    105,
+    120,
+    116,
+    117,
+    114,
+    101,
+    32,
+    99,
+    97,
+    102,
+    233
+  ],
+  "SourceHashes": [
+    {
+      "SHA256": "A821C4D112EF033C8E926E0167262A95C8F42FE403D50F5EC9E47BED3D1DB8F8",
+      "File": "Inspect-Windows.ps1"
+    },
+    {
+      "SHA256": "D0486C577B390D4AFBABDD65304F700AE8C6E15950F21DBC297E717E84E32893",
+      "File": "Launch-SimCleaner.ps1"
+    },
+    {
+      "SHA256": "09B00F50C1F5FB6EB7C2AF03C5B8436C6096120A06CEB848063165F7FFCCB4F2",
+      "File": "Safety.ps1"
+    },
+    {
+      "SHA256": "2E519810E02F76FED93C96D27108AA29F28E2FFCC891433011B272F133987001",
+      "File": "SimCleaner.ps1"
+    }
+  ]
+}
