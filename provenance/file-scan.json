@@ -1,0 +1,39 @@
+{
+  "Schema": 1,
+  "Version": "0.3.2",
+  "BaseArchive": "sim-cleaner-main.zip",
+  "BaseArchiveSHA256": "ADB41DA0716941ACAB6460231E48F8FCDA9A04A00BA97F0289F8FC04AE42CA7F",
+  "BaseProvenance": "provenance/source.json",
+  "CurrentSourceSHA256": {
+    "FileScan.ps1": "BD2A3B9AC80C1098824B8898CA77A06B8BD60669263DDA5DD61953765020B045",
+    "Inspect-Windows.ps1": "998B9E6AC07CBD5AA961E97A356549FBDC36B67FA7A570026B2E8D03CA4813F2",
+    "Launch-SimCleaner.ps1": "472CCF0327574170929D589BE95A66F99F168AEE72B5BA7BEC51E18E41C46A06",
+    "Safety.ps1": "09B00F50C1F5FB6EB7C2AF03C5B8436C6096120A06CEB848063165F7FFCCB4F2",
+    "SimCleaner.ps1": "0D1113F431F2C5ED3B3C28701F8D0C674C8654FD65850FF22E13B1F9DAB4A47A",
+    "Tests/Test-SimCleaner.ps1": "F7ACE629D7D9C7390348526465FC1A8213E61D78B76F4C7C9BD5159D0DA42E0B",
+    "Tests/Test-FileScan.ps1": "60233FE824A5078447F66910724864E6E204445EDD168A112E6EAEB04B78877D",
+    "Tests/historical-scan-fixture.json": "5CB83B0CD5B98EA5748B8B1D0041B4B0318615CE4986373E17245829C1F9E37C",
+    "scripts/build_package.py": "94512A525F2D6A731923C9CFC7759CA3C4FB088A976D31C27C6AAE9679DF9DB5"
+  },
+  "Validation": {
+    "ExistingRegressions": 140,
+    "FileScanTests": 54,
+    "Failures": 0,
+    "TargetCodeExecutedBySimCleaner": false,
+    "LiveScanVersion": "0.3.1",
+    "LiveScanInvocations": 2,
+    "CurrentVersionLiveScanExecuted": false,
+    "LiveScanEvidence": "evidence/file-scan-live-validation.json",
+    "Scope": "Current inert harnesses only; historical 0.3.1 live scans recorded separately. Disposable decryptor execution was a separate authorized investigation, not Sim Cleaner behavior."
+  },
+  "Limits": [
+    "Local derivative of verified upstream archive; the original Git history is preserved on GitHub.",
+    "Mocked dispatch and inert processes do not establish detection efficacy.",
+    "Historical 0.3.1 live observations apply to one ZIP on one Victus host; no full/quick or removal-efficacy acceptance.",
+    "Original 0.2.0 evidence is historical; current source-bound results are file-scan-regression-results.json and file-scan-test-results.json."
+  ],
+  "RecordedAt": "2026-10-15T19:02:55.829085+00:00",
+  "UpstreamRepository": "https://github.com/simulated-research/sim-cleaner",
+  "UpstreamCommit": "2d5ade2acf35fff8a8e0f9720ceab29ff85f3401",
+  "UpstreamVerification": "Signed-in GitHub main archive downloaded 2026-10-15; exact bytes match BaseArchiveSHA256 and all 31 baseline files."
+}

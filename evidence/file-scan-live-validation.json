@@ -1,0 +1,78 @@
+{
+  "Schema": 1,
+  "Scope": "Sanitized observations from two 0.3.1 single-file scans on HP Victus; not current-version integration or detection-efficacy acceptance.",
+  "Target": {
+    "File": "gentlemen-decryptor-main.zip",
+    "Bytes": 35947,
+    "SHA256": "F80438FD1D7C804A7E4E9436333938CB393086E997C217E9BF603E7F21822B9E"
+  },
+  "Arguments": [
+    "-Scan",
+    "-ScanType",
+    "3",
+    "-File",
+    "TARGET_ZIP",
+    "-DisableRemediation"
+  ],
+  "Policy": {
+    "SubmitSamplesConsent": 1,
+    "MAPSReporting": 2,
+    "DisableArchiveScanning": false,
+    "AntivirusSignatureVersion": "1.461.41.0",
+    "AntivirusSignatureLastUpdated": "2026-10-15T05:39:36-06:00"
+  },
+  "Scanner": {
+    "SHA256": "C0C9670D63A8A7DE9C0EF5BA58231826B0ABEE03C2B3BA6F858114D96EA12315",
+    "Version": "4.18.26090.9 (4df2f7dd1ad7282fa3437667daf210904670b7f3)",
+    "Signer": "CN=Microsoft Windows Publisher, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
+  },
+  "SourceSHA256AtScan": {
+    "FileScan.ps1": "56C5597CB76A9E16D770CBBECE02D66D410765FD06446E2D90F5803B1247257F",
+    "Inspect-Windows.ps1": "35AFB692F374EDCD6BCC3C68C1F8050095C90AD063341F790DCDD43761F7C7C3",
+    "Launch-SimCleaner.ps1": "472CCF0327574170929D589BE95A66F99F168AEE72B5BA7BEC51E18E41C46A06",
+    "Safety.ps1": "09B00F50C1F5FB6EB7C2AF03C5B8436C6096120A06CEB848063165F7FFCCB4F2",
+    "SimCleaner.ps1": "EDAC5DAD4E67ADE40067F78A5C8FACC031026360C90A78FC1B759F15FB2271A0"
+  },
+  "Runs": [
+    {
+      "Version": "0.3.1",
+      "PreviewOnly": false,
+      "StartedAt": "2026-10-15T12:23:47.8539595-06:00",
+      "DispatchAt": "2026-10-15T12:23:50.7546617-06:00",
+      "FinishedAt": "2026-10-15T12:23:51.8694620-06:00",
+      "Result": "CommandReturnedZero",
+      "SHA256After": "F80438FD1D7C804A7E4E9436333938CB393086E997C217E9BF603E7F21822B9E",
+      "ExitCode": 0,
+      "Stdout": "Scan starting...\r\nScan finished.\r\nScanning TARGET_ZIP found no threats.\r\n",
+      "StderrBytes": 0
+    },
+    {
+      "Version": "0.3.1",
+      "PreviewOnly": false,
+      "StartedAt": "2026-10-15T12:25:22.8999342-06:00",
+      "DispatchAt": "2026-10-15T12:25:25.9784605-06:00",
+      "FinishedAt": "2026-10-15T12:25:26.6569329-06:00",
+      "Result": "CommandReturnedZero",
+      "SHA256After": "F80438FD1D7C804A7E4E9436333938CB393086E997C217E9BF603E7F21822B9E",
+      "ExitCode": 0,
+      "Stdout": "Scan starting...\r\nScan finished.\r\nScanning TARGET_ZIP found no threats.\r\n",
+      "StderrBytes": 0
+    }
+  ],
+  "IndependentEvidence": {
+    "Source": "Defender MpCmdRun.log, second invocation at 2026-10-15T12:25:26-06:00",
+    "ObservedLines": [
+      "MpScan() started",
+      "MpScan() was completed",
+      "Scanning TARGET_ZIP found no threats.",
+      "Skipping clean as this is a custom scan with no remediation."
+    ],
+    "LifecycleEventQuery": "No matching 1000/1001/1002 events; no event-correlation claim."
+  },
+  "Limits": [
+    "Reports/logs are locally editable, not signed attestations.",
+    "Target code was not executed by Sim Cleaner. Later disposable decryption tests were separate.",
+    "No protection-policy changes requested; actual cloud/sample uploads not measured.",
+    "No assertion of complete archive coverage, malware absence or safe application behavior."
+  ]
+}

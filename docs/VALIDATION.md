@@ -1,8 +1,44 @@
 # Validation and acceptance scope
 
-This is a local-use prototype with reviewed source and inert tests. It is not certified, not accepted for unattended elevated operation and has no malware-detection or removal-efficacy claim. No disposable isolated Windows environment was available for real mutation acceptance.
+## Current 0.3.2 maintenance validation
 
-## Recorded evidence
+[140 regression tests](../evidence/file-scan-regression-results.json) and
+[54 file-scan tests](../evidence/file-scan-test-results.json) were rerun against
+the [current source fingerprints](../provenance/file-scan.json). They use AST
+definitions, mocked Defender dispatch and inert PowerShell child fixtures.
+They do not run target scripts or live scans. Run the suites sequentially.
+
+Version 0.3.2 corrects the inspector's encoding summary, the banner and evidence
+documentation. The scan implementation's only change from 0.3.1 is its report
+version. No new live scan was needed for these maintenance edits.
+
+## Observed 0.3.1 single-file use, 2026-10-15
+
+Two elevated single-ZIP invocations on the Victus returned zero, reported no
+threats and preserved the target SHA-256. The fixed arguments requested custom
+type 3 with DisableRemediation. Sim Cleaner did not execute archive contents.
+The [sanitized record](../evidence/file-scan-live-validation.json) contains the
+timestamps, target fingerprint, observed scanner/policy and source fingerprints
+from that version. Defender's own MpCmdRun.log independently records the second
+invocation's scan start/completion and skipped remediation. A query for events
+1000/1001/1002 returned no matching events; no event-correlation proof is claimed.
+
+The first preview had refused Passive Mode. A later preview succeeded in Normal
+mode after 0.3.1 accepted the valid Microsoft Windows Publisher signature.
+No protection-policy settings were changed by this work. Normal mode was an
+observation, not a configuration action. Existing cloud/sample-submission
+settings applied; these records do not prove whether uploads occurred.
+
+This verifies that invocation on that host, not detection efficacy, every
+archive member, every machine, or application safety. Separately authorized
+tests of copied decryptor scripts later used disposable synthetic data; they
+were not performed by Sim Cleaner. See [interpretation lessons](SCAN-INTERPRETATION.md).
+
+This remains a local-use prototype, not certified or accepted for unattended
+elevated operation. Full/quick scan lifecycle and removal efficacy still require
+separately authorized isolated acceptance.
+
+## Historical 0.2.0 evidence
 
 | Evidence | Result and scope |
 | --- | --- |
@@ -16,7 +52,7 @@ This is a local-use prototype with reviewed source and inert tests. It is not ce
 
 Original 12-test claims did not validate the delivered original harness: it failed at an invalid `Join-Path` expression. The earlier matching frozen106 candidate was also rejected by independent testing (105/106) for a real Unicode decoding defect. Corrected strict-decoding and installed-event-provider logic subsequently passed the 112/118 stages. Historical dispositions are preserved in [historical-review-118.txt](historical-review-118.txt); pending statements there belong to that snapshot. The current collector follow-up is independently reviewed in [REVIEW-FOLLOWUP.md](REVIEW-FOLLOWUP.md).
 
-The three unchanged runtime files and historical fixture are listed in provenance. Only Inspect-Windows.ps1 and the inert harness changed from the earlier delivered reviewed snapshot. Repository preparation preserves their exact bytes and does not broaden cleanup scope. Current portable documentation supersedes stale upstream machine-specific instructions.
+At that historical review, the three unchanged runtime files and historical fixture are listed in provenance. Only Inspect-Windows.ps1 and the inert harness had changed from the earlier delivered reviewed snapshot. Those historical fingerprints remain in source.json. Current source fingerprints are in file-scan.json; later changes must not be attributed to the historical runs.
 
 ## Remaining acceptance criteria
 
@@ -25,8 +61,8 @@ These require a separately authorized disposable Windows environment. They are n
 1. Real elevated first full/quick scan lifecycle, delayed completion/recheck, cancellation, partial failure, event/history retention and supported locales; unrelated and scheduled activity must never establish false completion.
 2. Separately authorized harmless detection/remediation fixtures, ALL-active scope/new arrivals, exclusion/cloud policy behavior, and complete before/intent/after evidence under interruption. No engine efficacy inference from the mocks.
 3. Cross-user/session mutex permissions, disk-full/access-denied/power interruption, Windows reparse/mapped-drive/locked-executable semantics and report persistence under real failure.
-4. Actual generic launcher/runtime/script-policy behavior and HP Victus compatibility. Only PowerShell 7.6.5 on the Gigabyte has recorded current acceptance. Runtime minimum declarations are not cross-version test evidence.
+4. Broader generic launcher/runtime/script-policy behavior and device compatibility. Historical collector acceptance used the Gigabyte; the later single-file scan used the Victus. Those observations do not establish every action on either device. Runtime minimum declarations are not cross-version test evidence.
 5. Broader native/localized output and vendor versions/network/trust behavior. Observed utility contracts are narrow; valid-but-wrong encodings cannot always be recognized from bytes alone. Certificate validity and hashes do not establish complete TLS or revocation assurance.
 6. OfflineScan must remain blocked until OS/WinRE/encryption readiness, explicit reboot consent, durable intent and post-boot reconciliation have isolated acceptance evidence.
 
-No actual elevated antivirus scan, quarantine/remediation test, reboot, EICAR/sample upload, protection-setting change or removal-efficacy test occurred in this review. Read-only collection and passing mocks do not establish clean-system status.
+No quarantine/remediation-efficacy or reboot acceptance is claimed. The actual single-ZIP scans above do not establish clean-system status. Existing cloud/sample policy applied; actual uploads were not measured.

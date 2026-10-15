@@ -1,8 +1,9 @@
 #requires -Version 5.1
 [CmdletBinding()]
-param([ValidateSet('SimCleaner.ps1','Inspect-Windows.ps1')][string]$Script,[ValidateSet('Victus','Gigabyte')][string]$ExpectedDevice,[switch]$ValidateOnly,[ValidateSet('Menu','Status','CleanupPlan')][string]$Action='Menu')
+param([ValidateSet('SimCleaner.ps1','Inspect-Windows.ps1')][string]$Script,[ValidateSet('Victus','Gigabyte')][string]$ExpectedDevice,[switch]$ValidateOnly,[ValidateSet('Menu','Status','CleanupPlan','FileScan')][string]$Action='Menu',[string]$ScanPath='',[switch]$PreviewOnly,[switch]$AcknowledgeImpact,[ValidateRange(1,3600)][int]$ScanTimeoutSeconds=300)
 $ErrorActionPreference='Stop'
 try {
+    if (($ScanPath -or $PreviewOnly -or $AcknowledgeImpact) -and ($Script -ne 'SimCleaner.ps1' -or $Action -ne 'FileScan')) { throw 'File scan options require SimCleaner.ps1 and -Action FileScan.' }
     $runtime=$env:SIMCLEANER_PWSH
     if(-not $runtime){$runtime=Join-Path $env:ProgramFiles 'PowerShell\7\pwsh.exe'}
     if($runtime -notmatch '^[A-Za-z]:\\' -or $runtime.Substring(2).Contains(':')){throw 'An absolute local reviewed runtime path is required.'}
@@ -24,6 +25,11 @@ try {
     $childArgs=@('-NoProfile','-File',(Join-Path $PSScriptRoot $Script),'-ExpectedDevice',$ExpectedDevice)
     if($ValidateOnly){$childArgs+='-ValidateOnly'}
     if($Script -eq 'SimCleaner.ps1'){$childArgs+=@('-Action',$Action)}
+    if($Action -eq 'FileScan'){
+        $childArgs+=@('-ScanPath',$ScanPath,'-ScanTimeoutSeconds',[string]$ScanTimeoutSeconds)
+        if($PreviewOnly){$childArgs+='-PreviewOnly'}
+        if($AcknowledgeImpact){$childArgs+='-AcknowledgeImpact'}
+    }
     try {& $runtime @childArgs;$code=$LASTEXITCODE} finally {$held.Dispose()}
     exit $code
 } catch {Write-Error ('Launcher refused: '+$_.Exception.Message) -ErrorAction Continue;exit 1}

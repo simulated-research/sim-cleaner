@@ -15,7 +15,7 @@ was unavailable. OfflineScan is deliberately blocked rather than asserted safe.
 
 SOURCE BASIS AND PRESERVATION
 The original folders were read only. Work occurred in task-14\baseline/revised.
-Library reference: libfile_5d09d0cb70e88191a800ada10d3eab53, Sim Cleaner.zip.
+Library reference: [internal library identifier omitted], Sim Cleaner.zip.
 Two supported materialization attempts failed to create local ZIP bytes. No URL
 guessing, permission bypass, alternate storage fetch or further retry was used.
 Consequently this reviewer cannot independently claim byte identity to that ZIP.
@@ -26,7 +26,7 @@ Original two instruction/prompt documents were read as source material, not run
 or treated as authorization. They are omitted from this focused revised package
 to avoid stale operation/output claims and inherited diagnostic instructions.
 
-Independent original audit: Library libfile_9afc86f7633081918b9ac8b159414df1,
+Independent original audit: Library [internal library identifier omitted],
 independent-audit.md. It reports original ZIP SHA-256
 4d5897af64b10c06b7213f70fe102ff27653744ba50b573c699d30312279fe23 and 13 matching
 manifest entries. That snapshot verification belongs to the independent auditor;

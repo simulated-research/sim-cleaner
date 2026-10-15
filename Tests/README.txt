@@ -1,4 +1,11 @@
-RUN ONLY THE INERT HARNESS
+INERT TEST HARNESSES
+
+The file-scan addition includes Test-FileScan.ps1, requiring a NEW -OutputDirectory. It AST-loads
+definitions only, mocks OS/policy/scanner dispatch, writes local evidence and
+an inert text fixture, and uses reviewed PowerShell output/timeout fixtures.
+It never runs MpCmdRun or any supplied target script. Run it in a separate
+trusted PowerShell 7 process. The original 140-case harness remains separate.
+Run the suites sequentially: both exercise the application's shared named lock.
 
 From an explicitly trusted PowerShell 7 host:
   pwsh -NoProfile -NonInteractive -File .\Tests\Test-SimCleaner.ps1
@@ -21,6 +28,7 @@ SourceHashes, HarnessSHA256 and HistoricalFixtureSHA256 in test-results.json
 bind reported passes to executed definitions. Static assertions are identified
 as such and complement mocked behavior; they do not prove Windows integration.
 
-Additional acceptance tests require a separately authorized disposable Windows
-environment. Never introduce EICAR, malware, quarantines, scans or reboot tests
-into Rick's project laptop to turn mocks into a release claim.
+Full/quick lifecycle, harmful-fixture/remediation and reboot acceptance require
+a separately authorized disposable Windows environment. The separately
+authorized single-file scans are recorded in docs/VALIDATION.md; neither
+inert harness dispatches those scans or tests detection efficacy.

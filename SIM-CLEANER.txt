@@ -1,6 +1,13 @@
-SIM CLEANER 0.2.0
+SIM CLEANER 0.3.2
 
 AVAILABLE ACTIONS
+FileScan: exactly one literal local regular file, including ZIP. Uses installed
+signed MpCmdRun custom type 3 with -DisableRemediation. No target code execution,
+folder recursion by this app, full/quick scan fallback, or policy change.
+-ScanPath PATH is required for CLI; -PreviewOnly writes a plan without dispatch.
+Live dispatch needs elevation, known Normal Defender state, fresh unchanged
+cloud policy/signature snapshot, and -AcknowledgeImpact or exact menu consent.
+See docs/FILE-SCAN.md for output, return codes, cloud policy and engine limits.
 Inspect: native Windows metadata child; propagates partial/failure exit.
 Status: read-only Defender/policy/threat/detection/event snapshot.
 CleanupPlan: snapshot with review token, active resources and ALL-active scope.
@@ -30,7 +37,7 @@ ALL-active scope must be specifically authorized. No arbitrary deletion, registr
 cleaning, quarantine restoration, exclusion changes or security-policy reset exists.
 
 EVIDENCE AND FAILURE
-Each action uses a GUID folder in SimCleanerReports. Immutable atomic files:
+Each action uses a GUID folder in SimCleanerReports. Unique, create-only atomic files:
   01-before.json — persisted snapshot before authorization/dispatch
   02-intent.json — fresh pre-dispatch state/intent; mandatory before mutation
   03-final.json  — after-state, correlation/result/errors, finish time
@@ -41,8 +48,10 @@ Evidence is locally editable; it is neither signed nor cryptographically authent
 
 A machine-wide named mutex serializes this kit's actions/inspection across copies.
 It does not control Windows/scheduled Defender activity or hostile administrators.
-Known unresolved scan starts, unavailable/truncated event evidence block new scans.
+For FullScan/QuickScan, unresolved starts or unavailable/truncated event evidence
+block dispatch. FileScan uses its separate policy/child-output contract.
 
+FULLSCAN / QUICKSCAN / RECHECKSCAN CORRELATION
 Completion requires a unique new 1000 start, same-ID 1001 completion, matching mode /
 type, no same-ID 1002 cancellation and matching advanced start/end history. Case
 differences in English 'Quick Scan'/'Full Scan' are accepted; unsupported localized
@@ -66,6 +75,10 @@ independent Windows activity. No claim of exclusive causal ownership is made.
 CLI exit 0: operation-specific result obtained (still inspect its limitations).
 CLI exit 1: guard/command/unknown scan/cancelled scan/storage failure.
 CLI exit 3: partial read-only evidence; menu retains any encountered failure.
+FileScan exit 3: detection-or-scan-error or unverified child outcome. Exit 0:
+preview only or scanner returned zero with captured output, not proof of safety.
+FileScan reports use schema Version 0.3.2; legacy actions/intents retain 0.2.0
+for RecheckScan compatibility. FileScan is not correlated by RecheckScan.
 No exit code means malware absent or every threat removed. Remediation remaining
 active/malformed/unreadable after-inventory is incomplete/failure. A zero remaining
 count is only the retrieved Defender inventory, not efficacy or all-clean evidence.

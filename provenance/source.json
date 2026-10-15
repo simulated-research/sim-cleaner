@@ -11,8 +11,6 @@
     "File": "Sim Cleaner reviewed 0.2.0 verified.zip",
     "Bytes": 109368,
     "SHA256": "E2B098F5693528D7C6B6650BC1D1EBC6A1BE45A27DDC594C98B521407CD87307",
-    "LibraryId": "libfile_2920f7ddb90481919f47699db1b2b7ab",
-    "LibraryVersion": 4,
     "VerifiedManifestEntries": 25
   },
   "ReviewedSourceSHA256": {
@@ -44,5 +42,6 @@
     "OfflineScan remains blocked",
     "No unattended-use acceptance",
     "No repository URL was inferred"
-  ]
+  ],
+  "HistoricalScope": "0.2.0 evidence only; current fingerprints are in file-scan.json. Internal library routing identifiers omitted from this export."
 }

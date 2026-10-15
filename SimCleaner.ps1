@@ -2,14 +2,19 @@
 [CmdletBinding()]
 param(
     [ValidateSet('Victus','Gigabyte')][string]$ExpectedDevice='Victus',
-    [ValidateSet('Menu','Inspect','Status','FullScan','QuickScan','UpdateSignatures','CleanupPlan','Remediate','OfflineScan','RecheckScan')][string]$Action='Menu',
+    [ValidateSet('Menu','Inspect','Status','FullScan','QuickScan','UpdateSignatures','CleanupPlan','Remediate','OfflineScan','RecheckScan','FileScan')][string]$Action='Menu',
     [switch]$AcknowledgeImpact,
     [string]$ReviewedPlanToken='',
     [switch]$ValidateOnly,
-    [string]$ScanRunDirectory=''
+    [string]$ScanRunDirectory='',
+    [string]$ScanPath='',
+    [switch]$PreviewOnly,
+    [ValidateRange(1,3600)][int]$ScanTimeoutSeconds=300
 )
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'Safety.ps1')
+. (Join-Path $PSScriptRoot 'FileScan.ps1')
+if (($ScanPath -or $PreviewOnly) -and $Action -ne 'FileScan') { throw 'ScanPath/PreviewOnly require -Action FileScan.' }
 $simSourceRoot=$PSScriptRoot
 $simComputer=Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
 if (-not (Test-SimTarget $simComputer $ExpectedDevice)) { throw 'TARGET MISMATCH or unknown hardware; no action performed.' }
@@ -127,6 +132,7 @@ function Invoke-SimInspection {
     if ($LASTEXITCODE -ne 0) { throw "Inspection child failed or partial (exit $LASTEXITCODE)." }
 }
 function Invoke-SimAction([string]$Selected,[bool]$Accepted,[string]$PlanToken='', [bool]$Interactive=$false,[string]$RecheckDirectory=$ScanRunDirectory) {
+    if ($Selected -eq 'FileScan') { return (Invoke-SimFileScan -Path $ScanPath -Accepted $Accepted -Interactive $Interactive -Preview ([bool]$PreviewOnly) -TimeoutSeconds $ScanTimeoutSeconds) }
     if ($Selected -eq 'Inspect') { Invoke-SimInspection; return }
     if ($Selected -eq 'OfflineScan') { throw 'OfflineScan blocked in this prototype: isolated WinRE/BitLocker/reboot readiness and durable post-boot evidence unvalidated.' }
     $lock=Enter-SimLock;$record=$null;$failure=$null;$runDirectory=$null
@@ -206,14 +212,14 @@ function Invoke-SimAction([string]$Selected,[bool]$Accepted,[string]$PlanToken='
     }
     if($failure){throw $failure};return $record
 }
-if ($Action -ne 'Menu') { $result=Invoke-SimAction $Action $AcknowledgeImpact.IsPresent $ReviewedPlanToken $false $ScanRunDirectory; if($result -and $result.Result -eq 'PartialReadOnlySnapshot'){exit 3}; return }
-Write-Host "SIM CLEANER 0.2.0 - $ExpectedDevice - administrator: $simAdmin"
-Write-Host 'Local prototype; lifecycle and detection efficacy require isolated acceptance.'
+if ($Action -ne 'Menu') { $result=Invoke-SimAction $Action $AcknowledgeImpact.IsPresent $ReviewedPlanToken $false $ScanRunDirectory; if($result -and ($result.Result -eq 'PartialReadOnlySnapshot' -or ($Action -eq 'FileScan' -and $result.Result -notin @('CommandReturnedZero','PreviewOnly')))){exit 3}; return }
+Write-Host "SIM CLEANER 0.3.2 - $ExpectedDevice - administrator: $simAdmin"
+Write-Host 'Local prototype; full/quick lifecycle and remediation require isolated acceptance; no detection-efficacy claim.'
 $sessionFailed=$false
 do {
-    Write-Host "`n1 Inspect Windows/network (no optional tools by default)`n2 Defender status`n3 Update signatures`n4 Full scan`n5 Quick scan`n6 Cleanup plan`n7 Remediate ALL active threats`n8 OfflineScan (blocked prototype feature)`n9 Recheck original scan evidence (read-only)`n0 Exit"
+    Write-Host "`n1 Inspect Windows/network (no optional tools by default)`n2 Defender status`n3 Update signatures`n4 Full scan`n5 Quick scan`n6 Cleanup plan`n7 Remediate ALL active threats`n8 OfflineScan (blocked prototype feature)`n9 Recheck original scan evidence (read-only)`n10 Scan one file/ZIP (no remediation)`n0 Exit"
     $choice=Read-Host 'Choose'
-    $selected=switch($choice){'1'{'Inspect'}'2'{'Status'}'3'{'UpdateSignatures'}'4'{'FullScan'}'5'{'QuickScan'}'6'{'CleanupPlan'}'7'{'Remediate'}'8'{'OfflineScan'}'9'{'RecheckScan'}default{$null}}
-    if($selected){try {$result=Invoke-SimAction $selected $false '' $true;if($result -and $result.Result -eq 'PartialReadOnlySnapshot'){$sessionFailed=$true}}catch{$sessionFailed=$true;Write-Warning $_.Exception.Message}}
+    $selected=switch($choice){'1'{'Inspect'}'2'{'Status'}'3'{'UpdateSignatures'}'4'{'FullScan'}'5'{'QuickScan'}'6'{'CleanupPlan'}'7'{'Remediate'}'8'{'OfflineScan'}'9'{'RecheckScan'}'10'{'FileScan'}default{$null}}
+    if($selected){try {$result=Invoke-SimAction $selected $false '' $true;if($result -and ($result.Result -eq 'PartialReadOnlySnapshot' -or ($selected -eq 'FileScan' -and $result.Result -ne 'CommandReturnedZero'))){$sessionFailed=$true}}catch{$sessionFailed=$true;Write-Warning $_.Exception.Message}}
 }while($choice -ne '0')
 if($sessionFailed){exit 3}

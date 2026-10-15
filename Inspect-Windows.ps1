@@ -47,7 +47,7 @@ $inspectionReport = [ordered]@{
     ToolEulaAcceptanceRequested = $AcceptToolEula.IsPresent
     FirewallPolicyStore = 'ActiveStore'
     NativeOutputEncoding = 'Strict ASCII; localized/non-ASCII native output is unavailable rather than guessed'
-    ExternalToolOutputEncoding = 'Strict UTF-16LE with BOM required; integration acceptance pending'
+    ExternalToolOutputEncoding = 'Strict UTF-16LE: Autorunsc requires BOM; Sigcheck requires no BOM; see per-tool OutputEncodingContract'
     Limitations = @()
 }
 

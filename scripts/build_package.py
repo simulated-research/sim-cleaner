@@ -6,6 +6,7 @@ The manifest binds bytes but is not a signature or authentication mechanism.
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path, PurePosixPath
 import stat
 import zipfile
@@ -50,9 +51,14 @@ def read_inputs():
     if "package-files.json" not in payloads or "scripts/build_package.py" not in payloads:
         raise ValueError("Package must contain its reproduction recipe")
     provenance = json.loads(payloads["provenance/source.json"])
+    amendment = json.loads(payloads["provenance/file-scan.json"])
+    current = amendment["CurrentSourceSHA256"]
     for name, expected in provenance["ReviewedSourceSHA256"].items():
-        if name not in payloads or sha(payloads[name]) != expected:
+        if name not in payloads or sha(payloads[name]) != current.get(name, expected):
             raise ValueError("Reviewed source/harness bytes changed: " + name)
+    for name, expected in current.items():
+        if name not in payloads or sha(payloads[name]) != expected:
+            raise ValueError("Current file-scan source bytes changed: " + name)
     test = json.loads(payloads["evidence/repository-test-results.json"])
     if test["Failed"] != 0 or test["Passed"] != 140:
         raise ValueError("Missing successful exact reviewed-harness result")
@@ -64,18 +70,46 @@ def read_inputs():
             raise ValueError("Executed source fingerprint mismatch")
     if {x["File"] for x in test["SourceHashes"]} != {x for x in expected if x.endswith(".ps1") and "/" not in x}:
         raise ValueError("Test source coverage mismatch")
+    # Retain the base evidence above as historical, and require new results bound
+    # to every current root runtime source. Neither test suite runs a live scan.
+    for report, harness, count in (
+        ("evidence/file-scan-regression-results.json", "Tests/Test-SimCleaner.ps1", 140),
+        ("evidence/file-scan-test-results.json", "Tests/Test-FileScan.ps1", 54),
+    ):
+        run = json.loads(payloads[report])
+        if run["Failed"] != 0 or run["Passed"] != count or run["HarnessSHA256"] != current[harness]:
+            raise ValueError("Current harness evidence missing/mismatched: " + report)
+        sources = {x["File"]: x["SHA256"] for x in run["SourceHashes"]}
+        runtime = {n: h for n, h in current.items() if n.endswith(".ps1") and "/" not in n}
+        if sources != runtime:
+            raise ValueError("Current executed source fingerprints mismatch: " + report)
+    live = json.loads(payloads["evidence/file-scan-live-validation.json"])
+    validation = amendment["Validation"]
+    if validation["LiveScanVersion"] != "0.3.1" or validation["LiveScanInvocations"] != len(live["Runs"]):
+        raise ValueError("Live observation version/count mismatch")
+    if live["Arguments"] != ["-Scan", "-ScanType", "3", "-File", "TARGET_ZIP", "-DisableRemediation"]:
+        raise ValueError("Live observation scope mismatch")
+    for run in live["Runs"]:
+        if (run["Version"] != validation["LiveScanVersion"] or run["PreviewOnly"] is not False
+                or run["ExitCode"] != 0 or run["Result"] != "CommandReturnedZero"
+                or run["SHA256After"] != live["Target"]["SHA256"]):
+            raise ValueError("Live observation contradicts recorded result")
     # This is a targeted privacy check, not a general secret-detection guarantee.
     for name, data in payloads.items():
         text = data.decode("utf-8-sig")
-        if "c:\\users\\admin" in text.lower() or "fox-hole\\outputs" in text.lower():
+        if "fox-hole\\outputs" in text.lower():
             raise ValueError("Private local path in package input: " + name)
+        if re.search(r"(?i)[a-z]:[\\/]+users[\\/]+(?!public\b|default\b)[^\\/\s\"']+", text):
+            raise ValueError("User profile path in package input: " + name)
+        if re.search(r"(?i)libfile_[0-9a-f]{20,}|github_pat_[a-z0-9_]{20,}|gh[pousr]_[a-z0-9]{20,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----", text):
+            raise ValueError("Private identifier or credential-shaped content: " + name)
     payloads["SHA256SUMS.txt"] = ("".join(sha(data) + "  " + name + "\n" for name, data in sorted(payloads.items()))).encode("utf-8")
     return payloads
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", default="dist/sim-cleaner-prototype.zip")
+    parser.add_argument("--output", default="dist/sim-cleaner-0.3.2-file-scan.zip")
     args = parser.parse_args()
     payloads = read_inputs()
     requested = Path(args.output)

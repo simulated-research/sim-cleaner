@@ -1,0 +1,302 @@
+{
+  "Scope": "AST-only definitions; mocked OS/policy/Defender/scanner dispatch; actual local evidence and file locks; inert PowerShell stdout/stderr/timeout fixtures. No target code execution or live scan.",
+  "Runtime": "7.6.5",
+  "ExecutedAt": "2026-10-15T13:01:25.7556587-06:00",
+  "Passed": 54,
+  "Failed": 0,
+  "HarnessSHA256": "60233FE824A5078447F66910724864E6E204445EDD168A112E6EAEB04B78877D",
+  "SourceHashes": [
+    {
+      "File": "FileScan.ps1",
+      "SHA256": "BD2A3B9AC80C1098824B8898CA77A06B8BD60669263DDA5DD61953765020B045"
+    },
+    {
+      "File": "Inspect-Windows.ps1",
+      "SHA256": "998B9E6AC07CBD5AA961E97A356549FBDC36B67FA7A570026B2E8D03CA4813F2"
+    },
+    {
+      "File": "Launch-SimCleaner.ps1",
+      "SHA256": "472CCF0327574170929D589BE95A66F99F168AEE72B5BA7BEC51E18E41C46A06"
+    },
+    {
+      "File": "Safety.ps1",
+      "SHA256": "09B00F50C1F5FB6EB7C2AF03C5B8436C6096120A06CEB848063165F7FFCCB4F2"
+    },
+    {
+      "File": "SimCleaner.ps1",
+      "SHA256": "0D1113F431F2C5ED3B3C28701F8D0C674C8654FD65850FF22E13B1F9DAB4A47A"
+    }
+  ],
+  "Results": [
+    {
+      "Test": "Literal spaces/brackets/metacharacters stay one file",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Invalid file-scope fixture 1 rejected",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Invalid file-scope fixture 2 rejected",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Invalid file-scope fixture 3 rejected",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Invalid file-scope fixture 4 rejected",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Invalid file-scope fixture 5 rejected",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Invalid file-scope fixture 6 rejected",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Invalid file-scope fixture 7 rejected",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Invalid file-scope fixture 8 rejected",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Invalid file-scope fixture 9 rejected",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Invalid file-scope fixture 10 rejected",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Invalid file-scope fixture 11 rejected",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Directory junction is rejected",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Preview persists file/hash/policy and never dispatches, even with acknowledgement",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "File action routes without reading global Defender inventory",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "No acknowledgement refuses dispatch",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Nonadmin refuses dispatch",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Unavailable policy refuses dispatch",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Untrusted scanner refuses dispatch",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Changed policy/signatures refuse dispatch",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Evidence failure 01-before.json prevents dispatch",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Evidence failure 02-intent.json prevents dispatch",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Final write failure cannot turn preview into success",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Final write failure propagates after mocked scan",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Exactly one narrow dispatch; input held against writes; hashes unchanged",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Code two remains ambiguous detection OR error and output is retained",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Unexpected exit is unverified, no retry",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Missing output with zero exit is unverified",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Timeout/capture failure is unverified even with zero exit",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Child startup failure saves evidence and releases file/lock",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Cancelled interactive prompt never dispatches",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Interactive exact FileScan prompt dispatches one file",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Non-ASCII/control bytes retained exactly without invented decoding",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "ASCII output remains readable",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Valid Windows Publisher signature accepted",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Valid Microsoft Corporation signature accepted",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Invalid Windows Publisher signature rejected",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Publisher name alone cannot substitute for Microsoft organization",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Unrecognized Microsoft signer rejected",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Missing signer certificate rejected",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Actual policy collector handles known policy",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Actual policy collector rejects Passive",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Actual policy collector rejects Disabled",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Actual policy collector rejects Unknown",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Actual policy collector rejects MissingConsent",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Actual policy collector rejects BadMaps",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Actual policy collector rejects BadArchive",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Actual policy collector rejects Empty",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Real wrapper captures separate stdout/stderr and nonzero exit",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Real wrapper preserves non-ASCII bytes",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Real wrapper refuses executable hash change",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Real wrapper timeout is unverified",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Real wrapper bounds output",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Test": "Original inert fixture unchanged by all tests",
+      "Passed": true,
+      "Error": null
+    }
+  ]
+}
